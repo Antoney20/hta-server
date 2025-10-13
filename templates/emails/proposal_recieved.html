@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Acknowledgement of Receipt of Health Intervention Proposal</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #000;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+        }
+        .header {
+            background-color: #27aae1;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        .content {
+            background-color: #fff;
+            padding: 30px;
+            border: 1px solid #27aae1;
+            border-top: none;
+        }
+        .proposal-details {
+            background-color: #f8f9fa;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            border: 1px solid #27aae1;
+        }
+        .footer {
+            background-color: #000;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+            border-radius: 0 0 8px 8px;
+            font-size: 14px;
+        }
+        .proposal-id {
+            background-color: #27aae1;
+            color: #fff;
+            padding: 10px;
+            border-radius: 5px;
+            font-family: monospace;
+            font-weight: bold;
+            text-align: center;
+            margin: 15px 0;
+        }
+        .status-badge {
+            background-color: #fff;
+            color: #27aae1;
+            padding: 5px 15px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: bold;
+            display: inline-block;
+            border: 2px solid #fff;
+        }
+        .detail-row {
+            margin: 10px 0;
+            padding: 8px 0;
+            border-bottom: 1px solid #27aae1;
+        }
+        .detail-label {
+            font-weight: bold;
+            color: #000;
+            display: inline-block;
+            width: 150px;
+        }
+        .next-steps {
+            background-color: #f0f8ff;
+            border: 1px solid #27aae1;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .next-steps h4 {
+            color: #27aae1;
+            margin-top: 0;
+        }
+        .submission-details {
+            background-color: #f5f5f5;
+            padding: 15px;
+            border-radius: 5px;
+            font-size: 12px;
+            color: #000;
+            margin-top: 20px;
+            border: 1px solid #27aae1;
+        }
+        .submission-details strong {
+            color: #27aae1;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>Acknowledgement of Receipt of Health Intervention Proposal</h1>
+        <span class="status-badge">RECEIVED</span>
+    </div>
+    
+    <div class="content">
+        <p>Dear {{ proposal.name }},</p>
+        
+        <p>Thank you for reaching out to share your proposal on health interventions with the <strong>Health Benefits and Tariffs Advisory Panel</strong>. We sincerely appreciate your interest in contributing to the improvement of health outcomes in Kenya.</p>
+        
+        <div class="proposal-id">
+            Proposal ID: #{{ proposal.id }}
+        </div>
+        
+        <div class="proposal-details">
+            <h3 style="color: #27aae1; margin-top: 0;">Proposal Details</h3>
+            <div class="detail-row">
+                <span class="detail-label">Intervention Name:</span>
+                {{ proposal.intervention_name }}
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Organization:</span>
+                {{ proposal.organization }}
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">County:</span>
+                {{ proposal.county }}
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Intervention Type:</span>
+                {{ proposal.intervention_type }}
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Beneficiary:</span>
+                {{ proposal.beneficiary }}
+            </div>
+            <div class="detail-row">
+                <span class="detail-label">Submitted:</span>
+                {{ proposal.submitted_at|date:"F j, Y \a\t g:i A" }}
+            </div>
+            {% if proposal.proposaldocument_set.exists %}
+            <div class="detail-row">
+                <span class="detail-label">Attachments:</span>
+                {{ proposal.proposaldocument_set.count }} file(s) uploaded
+            </div>
+            {% endif %}
+        </div>
+        
+        <p>Please note that we receive a high volume of suggestions and proposals from the public, and each submission is important to us, and we strive to review them thoroughly. While we are not able to respond to every submission individually, please be assured that your proposal has been received and will be considered as part of our review process.</p>
+        
+        <p>Should your proposal be selected for further consideration or discussion, a member of our team will contact you directly.</p>
+        
+        <div class="next-steps">
+            <h4>What happens next?</h4>
+            <ul>
+                <li>Our review team will evaluate your proposal within 5-7 business days</li>
+                <li>We may contact you if additional information is required</li>
+                <li>You will receive an email notification once the review is complete</li>
+                <li>Keep this email for your records, including your Proposal ID</li>
+            </ul>
+        </div>
+        
+        <p>Thank you once again for your commitment to enhancing health services. We value public input and collaboration as we work toward better health for all.</p>
+        
+        <p>If you have any questions or need to provide additional information, please reply to this email and include your Proposal ID.</p>
+        
+        <p>Sincerely,<br>
+        <strong style="color: #27aae1;">Benefits and Tariffs Advisory Panel Secretariat</strong></p>
+        
+        <div class="submission-details">
+            <p><strong>Submission Details:</strong></p>
+            <p>• Subject: "{{ proposal.intervention_name }}"</p>
+            <p>• Submitted on: {{ proposal.submitted_at|date:"l, F j, Y" }}</p>
+            <p>• This is an automated acknowledgment email.</p>
+        </div>
+    </div>
+    
+        <div class="footer">
+        <p>This is an automated acknowledgment email.</p>
+        <p>&copy; {{ current_year }} Health Benefits and Tariffs Advisory Panel. All rights reserved.</p>
+    </div>
+</body>
+</html>
