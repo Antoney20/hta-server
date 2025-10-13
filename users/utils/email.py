@@ -64,7 +64,6 @@ def send_password_reset_email(user, reset_link):
     try:
         logger.info(f"Preparing password reset email for: {user.email}")
         
-        # Get user's display name
         user_name = user.first_name or user.username
         
         # Prepare context for template
@@ -75,7 +74,7 @@ def send_password_reset_email(user, reset_link):
         }
         
         # Email subject
-        subject = 'Password Reset Request - HBTAP Communications Hub'
+        subject = 'Password Reset Request - BPTAP Communications Hub'
         
         # Render HTML template
         html_content = render_to_string('emails/password_reset.html', context)
@@ -132,7 +131,7 @@ def send_password_change_confirmation(user):
         }
         
         # Email subject
-        subject = 'Password Changed Successfully - HBTAP Communications Hub'
+        subject = 'Password Changed Successfully - BPTAP Communications Hub'
         
         # Render HTML template
         html_content = render_to_string('emails/password_reset_confirmation.html', context)
