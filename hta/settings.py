@@ -25,15 +25,14 @@ os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
-# SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-&t-rtdy*ivrmde##d5-h^9gxg((f=(so1!mj$ypd+-zgekyx+='
+# Secret Key
+SECRET_KEY = os.getenv("SECRET_KEY")
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Debug mode
+DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
 
-ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
-
-
+# Allowed Hosts
+ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
 
 
 # Django security settings
@@ -49,7 +48,7 @@ CSRF_COOKIE_SAMESITE = 'Lax'
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",  
     "https://localhost:3000", 
-    'https://ndovu-study.vercel.app',
+    'https://prod-hta.vercel.app'
 ]
 
 
@@ -73,7 +72,7 @@ CORS_ALLOW_CREDENTIALS = True
 CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000', 
     'https://localhost:3000', 
-    'https://ndovu-study.vercel.app',
+    'https://prod-hta.vercel.app'
 ]
 
 
