@@ -541,6 +541,54 @@ class MediaResource(models.Model):
         return self.title
 
 
+
+
+
+class ContactSubmission(models.Model):
+    full_name = models.CharField(max_length=100)
+    email = models.EmailField()
+    organization = models.CharField(max_length=200, blank=True, null=True)
+    subject = models.CharField(max_length=200)
+    message = models.TextField()
+    ip_address = models.GenericIPAddressField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Contact Submission"
+        verbose_name_plural = "Contact Submissions"
+
+    def __str__(self):
+        return f"{self.full_name} - {self.subject}"
+
+
+
+
+class NewsletterSubscription(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField(unique=True)
+    is_active = models.BooleanField(default=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    subscribed_at = models.DateTimeField(auto_now_add=True)
+    unsubscribed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-subscribed_at']
+        verbose_name = "Newsletter Subscription"
+        verbose_name_plural = "Newsletter Subscriptions"
+
+    def __str__(self):
+        status = "Active" if self.is_active else "Unsubscribed"
+        return f"{self.email} - {status}"
+    
+    def unsubscribe(self):
+        """Unsubscribe the user"""
+        from django.utils import timezone
+        self.is_active = False
+        self.unsubscribed_at = timezone.now()
+        self.save()
+    
+
 auditlog.register(CustomUser)
 auditlog.register(InterventionProposal)
 auditlog.register(Member)
@@ -552,3 +600,5 @@ auditlog.register(FAQ)
 auditlog.register(News)
 auditlog.register(Governance)
 auditlog.register(MediaResource)
+auditlog.register(ContactSubmission)
+auditlog.register(NewsletterSubscription)

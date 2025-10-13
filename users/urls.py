@@ -12,6 +12,9 @@ router.register(r'faqs', views.FAQViewSet, basename='faq')
 router.register(r'news', views.NewsViewSet, basename='news')
 router.register(r'governance', views.GovernanceViewSet, basename='governance')
 router.register(r'media-resources', views.MediaResourceViewSet, basename='mediaresource')
+router.register(r'contact', views.ContactSubmissionViewSet, basename='contact')
+router.register(r'newsletter', views.NewsletterSubscriptionViewSet, basename='newsletter')
+
 
 
 app_name = 'members'

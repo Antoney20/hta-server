@@ -6,9 +6,11 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+
 def send_confirmation_email(proposal):
     """Send confirmation email for a proposal"""
-    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@yoursite.com')
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
     reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', from_email)
     
     try:
@@ -24,15 +26,20 @@ def send_confirmation_email(proposal):
         
         subject = 'Acknowledgement of Receipt of Health Intervention Proposal'
         
+        # Render HTML template
         html_content = render_to_string('emails/proposal_recieved.html', context)
         
+        # Create email with HTML only
         email = EmailMultiAlternatives(
             subject=subject,
-            body=html_content,
+            body='',  # Empty body since we're using HTML
             from_email=from_email,
             to=[proposal.email],
             reply_to=[reply_to] if reply_to != from_email else None
         )
+        
+        # Attach HTML content
+        email.attach_alternative(html_content, "text/html")
         
         email.send()
         
@@ -44,8 +51,52 @@ def send_confirmation_email(proposal):
         print(f"✗ Failed to send confirmation email to: {proposal.email} - Error: {exc}")
         logger.error(f"Error sending confirmation email for proposal {proposal.id}: {exc}")
         return False
+    
+    
 
-
+def send_contact_confirmation_email(contact_submission):
+    """Send confirmation email for a contact submission"""
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
+    reply_to = getattr(settings, 'CONTACT_REPLY_TO_EMAIL', from_email)
+    
+    try:
+        print(f"Preparing confirmation email for: {contact_submission.email}")
+        
+        context = {
+            'contact': contact_submission,
+            'current_year': timezone.now().year,
+            'full_name': contact_submission.full_name,
+            'subject': contact_submission.subject,
+        }
+        
+        subject = 'Thank You for Contacting Us - Message Received'
+        
+        # Render HTML template
+        html_content = render_to_string('emails/contact_received.html', context)
+        
+        # Create email with HTML only
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body='',  # Empty body since we're using HTML
+            from_email=from_email,
+            to=[contact_submission.email],
+            reply_to=[reply_to] if reply_to != from_email else None
+        )
+        
+        # Attach HTML content
+        email.attach_alternative(html_content, "text/html")
+        
+        email.send()
+        
+        print(f"✓ Confirmation email sent successfully to: {contact_submission.email}")
+        logger.info(f"Confirmation email sent for contact submission {contact_submission.id} to {contact_submission.email}")
+        return True
+        
+    except Exception as exc:
+        print(f"✗ Failed to send confirmation email to: {contact_submission.email} - Error: {exc}")
+        logger.error(f"Error sending confirmation email for contact submission {contact_submission.id}: {exc}")
+        return False
+    
 
 def send_password_reset_email(user, reset_link):
     """
@@ -168,7 +219,7 @@ class ProposalEmailService:
     """Service class for sending proposal-related emails"""
     
     def __init__(self):
-        self.from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@yoursite.com')
+        self.from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
         self.reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', self.from_email)
     
     def send_confirmation_email(self, proposal):

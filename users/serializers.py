@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import   FAQ, CustomUser, Governance, MediaResource, Member , InterventionProposal, News, ProposalDocument, ProposalSubmission, TemporaryFile
+from .models import   FAQ, ContactSubmission, CustomUser, Governance, MediaResource, Member , InterventionProposal, News, NewsletterSubscription, ProposalDocument, ProposalSubmission, TemporaryFile
 from django.db.models import Q
 import logging
 User = get_user_model()
@@ -381,3 +381,20 @@ class MediaResourceSerializer(serializers.ModelSerializer):
     class Meta:
         model = MediaResource
         fields = '__all__'
+        
+
+class ContactSubmissionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ContactSubmission
+        fields = '__all__'
+        read_only_fields = ['ip_address', 'created_at']
+        
+class NewsletterSubscriptionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NewsletterSubscription
+        fields = ['id', 'email', 'is_active', 'subscribed_at']
+        read_only_fields = ['id', 'is_active', 'subscribed_at']
+
+
+class NewsletterUnsubscribeSerializer(serializers.Serializer):
+    email = serializers.EmailField(required=True)

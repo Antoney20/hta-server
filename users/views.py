@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.core.files.base import ContentFile
 import json
 import logging
-from django.db import transaction
+from django.db import transaction , IntegrityError
 from django.conf import settings
 
 from django.contrib.sessions.models import Session
@@ -38,13 +38,13 @@ from django.utils.encoding import force_bytes, force_str
 
 
 from users.permissions import IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
-from users.serializers import FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer
-from .models import FAQ, CustomUser, Governance, InterventionProposal, MediaResource, Member, News, ProposalSubmission, TemporaryFile, ProposalSubmissionStatus, ProposalDocument
+from users.serializers import ContactSubmissionSerializer, FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, NewsletterSubscriptionSerializer, NewsletterUnsubscribeSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer
+from .models import FAQ, ContactSubmission, CustomUser, Governance, InterventionProposal, MediaResource, Member, News, NewsletterSubscription, ProposalSubmission, TemporaryFile, ProposalSubmissionStatus, ProposalDocument
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
 from .tasks import retry_failed_proposal_submission, send_proposal_confirmation_email_task
 from members.models import Announcement, Channel, PriorityLevel, ProposalTracker, ReviewComment, ReviewStage, ReviewerAssignment, Task, TaskStatus, ThematicArea,  Event
-from .utils.email import send_confirmation_email, send_password_change_confirmation, send_password_reset_email
+from .utils.email import send_confirmation_email, send_password_change_confirmation, send_password_reset_email, send_contact_confirmation_email
 
 from datetime import timedelta
 from django.db.models import Count, Q, Avg
@@ -777,11 +777,12 @@ class ProposalSubmissionListView(ListAPIView):
         
         
 
+
+
 class InterventionProposalView(APIView):
     parser_classes = (MultiPartParser, FormParser)
     permission_classes = [AllowAny]
     
-
     def post(self, request):
         try:
             # Use atomic transaction for better error handling
@@ -799,7 +800,6 @@ class InterventionProposalView(APIView):
                 serializer.validated_data['ip_address'] = get_client_ip(request)
                 serializer.validated_data['user_agent'] = request.META.get('HTTP_USER_AGENT', '')
                 
-                # Save proposal - this handles document uploads automatically via your serializer
                 proposal = serializer.save()
 
                 # Create proposal tracker
@@ -812,56 +812,27 @@ class InterventionProposalView(APIView):
                 except Exception as tracker_error:
                     logger.warning(f"Failed to create ProposalTracker for proposal {proposal.id}: {tracker_error}")
 
-            # Send confirmation email (outside transaction to avoid rollback issues)
-            # email_sent = send_confirmation_email(proposal)
-            
+            email_sent = False
             try:
-                task = send_proposal_confirmation_email_task.delay(proposal.id)
-                logger.info(f"Queued confirmation email task {task.id} for proposal {proposal.id}")
-                email_sent = True  
+                email_sent = send_confirmation_email(proposal)
+                if email_sent:
+                    logger.info(f"✓ Synchronous email sent successfully for proposal {proposal.id}")
             except Exception as e:
-                logger.error(f"Failed to queue confirmation email for proposal {proposal.id}: {e}")
-                email_sent = False
+                logger.warning(f"✗ Synchronous email failed for proposal {proposal.id}: {e}")
+                # Don't raise, continue to Celery fallback
+                pass
             
+            # If synchronous send failed, try queuing with Celery
             if not email_sent:
-                # Prepare form data for retry, excluding file objects
-                form_data = self._extract_form_data_for_retry(request.data)
-                
-                # Add document metadata if documents were uploaded
-                if proposal.documents.exists():
-                    form_data['document_metadata'] = [
-                        {
-                            'original_name': doc.original_name,
-                            'file_path': doc.document.name,
-                            'uploaded_at': doc.uploaded_at.isoformat()
-                        }
-                        for doc in proposal.documents.all()
-                    ]
-                
-                # Create submission record for retry
-                submission = ProposalSubmission.objects.create(
-                    proposal=proposal,
-                    form_data=form_data,
-                    ip_address=get_client_ip(request),
-                    user_agent=request.META.get('HTTP_USER_AGENT', ''),
-                    status=ProposalSubmissionStatus.PENDING,
-                    error_message="Failed to send confirmation email"
-                )
-                
-                # Queue retry task
-                task = retry_failed_proposal_submission.delay(str(submission.submission_id))
-                submission.task_id = task.id
-                submission.save()
+                try:
+                    task = send_proposal_confirmation_email_task.delay(proposal.id)
+                    logger.info(f"Queued confirmation email task {task.id} for proposal {proposal.id}")
+                    email_sent = True  # Consider it handled if queued successfully
+                except Exception as celery_error:
+                    logger.error(f"Failed to queue confirmation email for proposal {proposal.id}: {celery_error}")
+                    pass
 
-                return Response({
-                    'success': True,
-                    'message': 'Proposal created successfully with some issues. Processing will continue in background.',
-                    'proposal_id': proposal.id,
-                    'submission_id': str(submission.submission_id),
-                    'warnings': ['Failed to send confirmation email'],
-                    'documents_count': proposal.documents.count()
-                })
-
+            # Always return success if proposal was saved
             return Response({
                 'success': True,
                 'message': 'Proposal submitted successfully',
@@ -875,7 +846,7 @@ class InterventionProposalView(APIView):
                 'success': False,
                 'message': 'Error submitting proposal. Please try again.'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+            
     def _extract_form_data_for_retry(self, request_data):
         """
         Extract form data for retry, excluding file objects that can't be serialized.
@@ -1250,3 +1221,213 @@ class MediaResourceViewSet(viewsets.ModelViewSet):
     queryset = MediaResource.objects.all()
     serializer_class = MediaResourceSerializer
     permission_classes = [IsOwnerOrAdminOrReadOnly]
+    
+    
+    
+
+
+
+
+
+class ContactSubmissionViewSet(viewsets.ModelViewSet):
+    queryset = ContactSubmission.objects.all()
+    serializer_class = ContactSubmissionSerializer
+    
+    def get_permissions(self):
+        """
+        POST: Public (AllowAny)
+        LIST, RETRIEVE, DELETE, UPDATE: Requires authentication
+        """
+        if self.action == 'create':
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def create(self, request, *args, **kwargs):
+        # Get client IP
+        ip_address = get_client_ip(request)
+        
+        # Check submission count for this IP
+        submission_count = ContactSubmission.objects.filter(ip_address=ip_address).count()
+        
+        if submission_count >= 10:
+            return Response(
+                {
+                    'success': False,
+                    'message': 'Maximum submission limit reached. Please contact us directly.'
+                },
+                status=status.HTTP_429_TOO_MANY_REQUESTS
+            )
+        
+        # Add IP address to the data
+        data = request.data.copy()
+        data['ip_address'] = ip_address
+        
+        serializer = self.get_serializer(data=data)
+        if serializer.is_valid():
+            contact_submission = serializer.save()
+            
+
+            send_contact_confirmation_email(contact_submission)
+            
+            return Response(
+                {
+                    'success': True,
+                    'message': 'Thank you for contacting us! We will get back to you soon.'
+                },
+                status=status.HTTP_201_CREATED
+            )
+        
+        return Response(
+            {
+                'success': False,
+                'message': 'Please check your form data.',
+                'errors': serializer.errors
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+
+
+
+
+
+class NewsletterSubscriptionViewSet(viewsets.ModelViewSet):
+    queryset = NewsletterSubscription.objects.all()
+    serializer_class = NewsletterSubscriptionSerializer
+    
+    def get_permissions(self):
+        """
+        POST (subscribe): Public (AllowAny)
+        POST (unsubscribe): Public (AllowAny)
+        LIST, RETRIEVE, DELETE, UPDATE: Requires authentication
+        """
+        if self.action in ['create', 'unsubscribe']:
+            return [AllowAny()]
+        return [IsAuthenticated()]
+
+    def create(self, request, *args, **kwargs):
+        """Subscribe to newsletter"""
+        email = request.data.get('email', '').strip().lower()
+        
+        if not email:
+            return Response(
+                {
+                    'success': False,
+                    'message': 'Email address is required.'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            # Check if email already exists
+            existing = NewsletterSubscription.objects.filter(email=email).first()
+            
+            if existing:
+                if existing.is_active:
+                    return Response(
+                        {
+                            'success': False,
+                            'message': 'This email is already subscribed to our newsletter.'
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                else:
+                    # Reactivate subscription
+                    existing.is_active = True
+                    existing.unsubscribed_at = None
+                    existing.ip_address = get_client_ip(request)
+                    existing.save()
+                    
+                    return Response(
+                        {
+                            'success': True,
+                            'message': 'Welcome back! You have been resubscribed to our newsletter.'
+                        },
+                        status=status.HTTP_200_OK
+                    )
+            
+            # Create new subscription
+            subscription = NewsletterSubscription.objects.create(
+                email=email,
+                ip_address=get_client_ip(request)
+            )
+            
+            logger.info(f"New newsletter subscription: {email}")
+            
+            return Response(
+                {
+                    'success': True,
+                    'message': 'Thank you for subscribing to our newsletter!'
+                },
+                status=status.HTTP_201_CREATED
+            )
+            
+        except IntegrityError:
+            return Response(
+                {
+                    'success': False,
+                    'message': 'This email is already subscribed.'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            logger.error(f"Error subscribing to newsletter: {e}")
+            return Response(
+                {
+                    'success': False,
+                    'message': 'An error occurred. Please try again.'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
+    @action(detail=False, methods=['post'], url_path='unsubscribe')
+    def unsubscribe(self, request):
+        """Unsubscribe from newsletter"""
+        serializer = NewsletterUnsubscribeSerializer(data=request.data)
+        
+        if not serializer.is_valid():
+            return Response(
+                {
+                    'success': False,
+                    'message': 'Please provide a valid email address.'
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        email = serializer.validated_data['email'].strip().lower()
+        
+        try:
+            subscription = NewsletterSubscription.objects.filter(
+                email=email,
+                is_active=True
+            ).first()
+            
+            if not subscription:
+                return Response(
+                    {
+                        'success': False,
+                        'message': 'This email is not subscribed to our newsletter.'
+                    },
+                    status=status.HTTP_404_NOT_FOUND
+                )
+            
+            subscription.unsubscribe()
+            logger.info(f"Newsletter unsubscription: {email}")
+            
+            return Response(
+                {
+                    'success': True,
+                    'message': 'You have been successfully unsubscribed from our newsletter.'
+                },
+                status=status.HTTP_200_OK
+            )
+            
+        except Exception as e:
+            logger.error(f"Error unsubscribing from newsletter: {e}")
+            return Response(
+                {
+                    'success': False,
+                    'message': 'An error occurred. Please try again.'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
