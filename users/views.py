@@ -568,30 +568,41 @@ class UserSettingsViewSet(viewsets.ViewSet):
             return Response({'success': False, 'message': 'Failed to change password'}, 
                           status=status.HTTP_500_INTERNAL_SERVER_ERROR)
     
+
+
+
     @action(detail=False, methods=['get'])
     def devices(self, request):
-        """GET /settings/devices/ - Get active devices"""
+        """GET /settings/devices/ - Get active devices (max 10 most recent)"""
         try:
             user = request.user
             current_key = request.session.session_key
             sessions = self._get_user_sessions(user, include_details=True)
-            
+
+            # last 10
+            recent_sessions = sorted(
+                sessions, 
+                key=lambda s: s['expire'], 
+                reverse=True
+            )[:10]
+
             devices = [{
                 'session_key': s['key'],
                 'is_current': s['key'] == current_key,
                 'expire_date': s['expire'],
-            } for s in sessions]
-            
+            } for s in recent_sessions]
+
             return Response({
                 'success': True,
                 'devices': devices,
                 'total': len(devices)
             })
+
         except Exception as e:
             logger.error(f"Devices retrieval error: {str(e)}")
             return Response({'success': False, 'message': 'Failed to retrieve devices'}, 
-                          status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-    
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
     @action(detail=False, methods=['post'])
     def logout_device(self, request):
         """POST /settings/logout_device/ - Logout specific device"""
