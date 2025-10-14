@@ -132,16 +132,14 @@ def process_single_file(proposal_id, temp_file_id):
         temp_file.file.delete()
         temp_file.delete()
         
-        logger.info(f"Successfully processed file {temp_file.original_name} for proposal {proposal_id}")
-        
+
     except Exception as exc:
         logger.error(f"Error processing file for proposal {proposal_id}: {exc}")
         raise exc
     
     
     
-    
-    
+ 
 
 
 

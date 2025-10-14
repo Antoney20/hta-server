@@ -82,6 +82,27 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'username', 'email', 'first_name', 'last_name']
+        
+            
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+
+        # Obfuscate email
+        email = representation.get('email')
+        if email:
+            parts = email.split('@')
+            if len(parts) == 2:
+                name, domain = parts
+                if len(name) > 4:
+                    name_obfuscated = f"{name[:2]}{'*' * (len(name) - 4)}{name[-2:]}"
+                elif len(name) > 2:
+                    name_obfuscated = f"{name[0]}{'*' * (len(name) - 2)}{name[-1]}"
+                else:
+                    name_obfuscated = '*' * len(name)
+                representation['email'] = f"{name_obfuscated}@{domain}"
+
+        return representation
+
 
 class ReviewerAssignmentSerializer(serializers.ModelSerializer):
     reviewer = UserSerializer(read_only=True)

@@ -118,6 +118,33 @@ class MemberSerializer(serializers.ModelSerializer):
         model = Member
         fields = '__all__'
         
+        
+
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+
+        phone = representation.get('phone_number')
+        if phone and len(phone) > 4:
+            first = phone[:2]
+            last = phone[-2:]
+            representation['phone_number'] = f"{first}{'*' * (len(phone) - 4)}{last}"
+
+        # Obfuscate email if available in user
+        user_data = representation.get('user')
+        if user_data:
+            email = user_data.get('email')
+            if email:
+                # Split into name and domain
+                parts = email.split('@')
+                if len(parts) == 2:
+                    name, domain = parts
+                    if len(name) > 4:
+                        name_obfuscated = f"{name[:2]}{'*' * (len(name) - 4)}{name[-2:]}"
+                    else:
+                        name_obfuscated = f"{name[0]}{'*' * (len(name) - 2)}{name[-1]}"
+                    representation['user']['email'] = f"{name_obfuscated}@{domain}"
+
+        return representation
 
 class UserMeSerializer(serializers.ModelSerializer):
     groups = serializers.SlugRelatedField(
@@ -357,6 +384,30 @@ class MemberListSerializer(serializers.ModelSerializer):
         ]
 
 
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+
+        phone = representation.get('phone_number')
+        if phone and len(phone) > 4:
+            first = phone[:2]
+            last = phone[-2:]
+            representation['phone_number'] = f"{first}{'*' * (len(phone) - 4)}{last}"
+
+        # Obfuscate email
+        email = representation.get('email')
+        if email:
+            parts = email.split('@')
+            if len(parts) == 2:
+                name, domain = parts
+                if len(name) > 4:
+                    name_obfuscated = f"{name[:2]}{'*' * (len(name) - 4)}{name[-2:]}"
+                elif len(name) > 2:
+                    name_obfuscated = f"{name[0]}{'*' * (len(name) - 2)}{name[-1]}"
+                else:
+                    name_obfuscated = '*' * len(name)
+                representation['email'] = f"{name_obfuscated}@{domain}"
+
+        return representation
 
 
 
