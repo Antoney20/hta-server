@@ -1,4 +1,3 @@
-#!/bin/bash
 
 # Colors for output
 RED='\033[0;31m'
@@ -207,21 +206,46 @@ create_directories() {
     return 0
 }
 
+
 # Run migrations
 run_migrations() {
     print_header "Running Database Migrations"
     
-    print_info "Making migrations..."
+    print_info "Making migrations for users app..."
+    python manage.py makemigrations users
+    
+    if [ $? -ne 0 ]; then
+        print_error "Failed to make migrations for users app"
+        return 1
+    fi
+    print_success "Users app migrations created"
+    
+    print_info "Applying users migrations..."
+    python manage.py migrate users
+    
+    if [ $? -ne 0 ]; then
+        print_error "Failed to migrate users app"
+        return 1
+    fi
+    print_success "Users app migrations applied"
+    
+    print_info "Making migrations for all apps..."
     python manage.py makemigrations
     
-    print_info "Applying migrations..."
+    if [ $? -ne 0 ]; then
+        print_error "Failed to make migrations"
+        return 1
+    fi
+    print_success "Migrations created"
+    
+    print_info "Applying all migrations..."
     python manage.py migrate
     
     if [ $? -eq 0 ]; then
-        print_success "Migrations completed successfully"
+        print_success "All migrations completed successfully"
         return 0
     else
-        print_error "Failed to run migrations"
+        print_error "Failed to apply migrations"
         return 1
     fi
 }
