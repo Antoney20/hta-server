@@ -6,8 +6,6 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-
-
 def send_confirmation_email(proposal):
     """Send confirmation email for a proposal"""
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
@@ -52,7 +50,6 @@ def send_confirmation_email(proposal):
         logger.error(f"Error sending confirmation email for proposal {proposal.id}: {exc}")
         return False
     
-    
 
 def send_contact_confirmation_email(contact_submission):
     """Send confirmation email for a contact submission"""
@@ -83,7 +80,6 @@ def send_contact_confirmation_email(contact_submission):
             reply_to=[reply_to] if reply_to != from_email else None
         )
         
-        # Attach HTML content
         email.attach_alternative(html_content, "text/html")
         
         email.send()
@@ -96,7 +92,7 @@ def send_contact_confirmation_email(contact_submission):
         print(f"✗ Failed to send confirmation email to: {contact_submission.email} - Error: {exc}")
         logger.error(f"Error sending confirmation email for contact submission {contact_submission.id}: {exc}")
         return False
-    
+
 
 def send_password_reset_email(user, reset_link):
     """

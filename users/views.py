@@ -1,4 +1,5 @@
 import os
+import threading
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.files.uploadedfile import InMemoryUploadedFile
@@ -921,10 +922,6 @@ class ProposalSubmissionListView(ListAPIView):
     serializer_class = ProposalSubmissionSerializer
        
         
-        
-
-
-
 class InterventionProposalView(APIView):
     parser_classes = (MultiPartParser, FormParser)
     permission_classes = [AllowAny]
@@ -958,27 +955,19 @@ class InterventionProposalView(APIView):
                 except Exception as tracker_error:
                     logger.warning(f"Failed to create ProposalTracker for proposal {proposal.id}: {tracker_error}")
 
-            email_sent = False
-            try:
-                email_sent = send_confirmation_email(proposal)
-                if email_sent:
-                    logger.info(f"✓ Synchronous email sent successfully for proposal {proposal.id}")
-            except Exception as e:
-                logger.warning(f"✗ Synchronous email failed for proposal {proposal.id}: {e}")
-                # Don't raise, continue to Celery fallback
-                pass
-            
-            # If synchronous send failed, try queuing with Celery
-            if not email_sent:
+            def send_email_in_background(proposal):
                 try:
-                    task = send_proposal_confirmation_email_task.delay(proposal.id)
-                    logger.info(f"Queued confirmation email task {task.id} for proposal {proposal.id}")
-                    email_sent = True  # Consider it handled if queued successfully
-                except Exception as celery_error:
-                    logger.error(f"Failed to queue confirmation email for proposal {proposal.id}: {celery_error}")
-                    pass
+                    email_sent = send_confirmation_email(proposal)
+                    if email_sent:
+                        logger.info(f"✓ Background email sent successfully for proposal {proposal.id}")
+                    else:
+                        logger.warning(f"✗ Background email failed for proposal {proposal.id}")
+                except Exception as e:
+                    logger.error(f"Error in background email for proposal {proposal.id}: {e}")
 
-            # Always return success if proposal was saved
+            threading.Thread(target=send_email_in_background, args=(proposal,), daemon=True).start()
+
+            # Return success immediately after save
             return Response({
                 'success': True,
                 'message': 'Proposal submitted successfully',
@@ -1018,9 +1007,6 @@ class InterventionProposalView(APIView):
                 form_data[key] = value
         
         return form_data
-
-
-
      
 
 @csrf_exempt
@@ -1389,51 +1375,71 @@ class ContactSubmissionViewSet(viewsets.ModelViewSet):
         return [IsAuthenticated()]
 
     def create(self, request, *args, **kwargs):
-        # Get client IP
-        ip_address = get_client_ip(request)
-        
-        # Check submission count for this IP
-        submission_count = ContactSubmission.objects.filter(ip_address=ip_address).count()
-        
-        if submission_count >= 10:
-            return Response(
-                {
-                    'success': False,
-                    'message': 'Maximum submission limit reached. Please contact us directly.'
-                },
-                status=status.HTTP_429_TOO_MANY_REQUESTS
-            )
-        
-        # Add IP address to the data
-        data = request.data.copy()
-        data['ip_address'] = ip_address
-        
-        serializer = self.get_serializer(data=data)
-        if serializer.is_valid():
-            contact_submission = serializer.save()
+        try:
+            # Get client IP
+            ip_address = get_client_ip(request)
             
+            # Check submission count for this IP
+            submission_count = ContactSubmission.objects.filter(ip_address=ip_address).count()
+            
+            if submission_count >= 10:
+                return Response(
+                    {
+                        'success': False,
+                        'message': 'Maximum submission limit reached. Please contact us directly.'
+                    },
+                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                )
+            
+            # Add IP address to the data
+            data = request.data.copy()
+            data['ip_address'] = ip_address
+            
+            # Use atomic transaction for better error handling
+            with transaction.atomic():
+                serializer = self.get_serializer(data=data)
+                if not serializer.is_valid():
+                    return Response(
+                        {
+                            'success': False,
+                            'message': 'Please check your form data.',
+                            'errors': serializer.errors
+                        },
+                        status=status.HTTP_400_BAD_REQUEST
+                    )
+                
+                contact_submission = serializer.save()
 
-            send_contact_confirmation_email(contact_submission)
+            def send_email_in_background(contact_submission):
+                try:
+                    email_sent = send_contact_confirmation_email(contact_submission)
+                    if email_sent:
+                        logger.info(f" Background email sent successfully for contact submission {contact_submission.id}")
+                    else:
+                        logger.warning(f"Background email failed for contact submission {contact_submission.id}")
+                except Exception as e:
+                    logger.error(f"Error in background email for contact submission {contact_submission.id}: {e}")
+
+            threading.Thread(target=send_email_in_background, args=(contact_submission,), daemon=True).start()
             
             return Response(
                 {
                     'success': True,
-                    'message': 'Thank you for contacting us! We will get back to you soon.'
+                    'message': 'Thank you for contacting us! We will get back to you soon.',
+                    'submission_id': contact_submission.id
                 },
                 status=status.HTTP_201_CREATED
             )
-        
-        return Response(
-            {
-                'success': False,
-                'message': 'Please check your form data.',
-                'errors': serializer.errors
-            },
-            status=status.HTTP_400_BAD_REQUEST
-        )
 
-
-
+        except Exception as e:
+            logger.error(f"Error creating contact submission: {str(e)}", exc_info=True)
+            return Response(
+                {
+                    'success': False,
+                    'message': 'Error submitting contact form. Please try again.'
+                },
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 
