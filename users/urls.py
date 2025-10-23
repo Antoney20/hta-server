@@ -26,7 +26,10 @@ urlpatterns = [
     path('auth/user/me/', views.user_me, name='user-me'),
     path('auth/password-reset/', PasswordResetRequestView.as_view(), name='password-reset-request'),
     path('auth/password-reset/confirm/', PasswordResetConfirmView.as_view(), name='password-reset-confirm'),
-
+    # path('users/<int:pk>/verify/', views.VerifyUserView.as_view(), name='verify-user'),
+    
+    # Email Link Verification (for approve/reject)
+    path('verify/<int:user_id>/<str:token>/', views.EmailVerifyView.as_view(), name='email-verify'),
     
     path('', include(router.urls)),
     

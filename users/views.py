@@ -2,6 +2,7 @@ import os
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.core.files.uploadedfile import InMemoryUploadedFile
+from django.contrib.auth.tokens import default_token_generator
 
 from django.utils.decorators import method_decorator
 from django.views import View
@@ -38,13 +39,13 @@ from django.utils.encoding import force_bytes, force_str
 
 
 from users.permissions import IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
-from users.serializers import ContactSubmissionSerializer, FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, NewsletterSubscriptionSerializer, NewsletterUnsubscribeSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer
-from .models import FAQ, ContactSubmission, CustomUser, Governance, InterventionProposal, MediaResource, Member, News, NewsletterSubscription, ProposalSubmission, TemporaryFile, ProposalSubmissionStatus, ProposalDocument
+from users.serializers import ContactSubmissionSerializer, FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, NewsletterSubscriptionSerializer, NewsletterUnsubscribeSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer, VerifyUserSerializer
+from .models import FAQ, ContactSubmission, CustomUser, Governance, InterventionProposal, MediaResource, Member, News, NewsletterSubscription, ProposalSubmission, TemporaryFile, ProposalSubmissionStatus, ProposalDocument, UserStatus
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
 from .tasks import retry_failed_proposal_submission, send_proposal_confirmation_email_task
 from members.models import Announcement, Channel, PriorityLevel, ProposalTracker, ReviewComment, ReviewStage, ReviewerAssignment, Task, TaskStatus, ThematicArea,  Event
-from .utils.email import send_confirmation_email, send_password_change_confirmation, send_password_reset_email, send_contact_confirmation_email
+from .utils.email import send_confirmation_email, send_password_change_confirmation, send_password_reset_email, send_contact_confirmation_email,  send_user_acknowledgment_email,  send_secretariate_notification_email, send_verification_success_email,  send_rejection_email
 
 from datetime import timedelta
 from django.db.models import Count, Q, Avg
@@ -72,35 +73,74 @@ def get_client_ip(request):
 
 # auth 
 
+# class RegisterView(generics.CreateAPIView):
+#     """User registration view with member profile"""
+#     queryset = CustomUser.objects.all()
+#     serializer_class = RegisterSerializer
+#     permission_classes = [AllowAny]
+   
+    
+#     def create(self, request, *args, **kwargs):
+#         try:
+#             serializer = self.get_serializer(data=request.data)
+#             serializer.is_valid(raise_exception=True)
+            
+#             user = serializer.save()
+            
+#             # Generate tokens
+#             refresh = RefreshToken.for_user(user)
+#             access_token = refresh.access_token
+            
+#             logger.info(f"New user registered: {user.email}")
+            
+#             return Response({
+#                 'success': True,
+#                 'message': 'User registered successfully',
+#                 'tokens': {
+#                     'access': str(access_token),
+#                     'refresh': str(refresh)
+#                 }
+#             }, status=status.HTTP_201_CREATED)
+            
+#         except Exception as e:
+#             logger.error(f"Registration error: {str(e)}")
+#             return Response({
+#                 'success': False,
+#                 'message': 'Registration failed. Please try again.',
+#                 'errors': getattr(e, 'detail', str(e))
+#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
 class RegisterView(generics.CreateAPIView):
-    """User registration view with member profile"""
+    """User registration view with member profile - Step 1: Registration (inactive until verified)"""
     queryset = CustomUser.objects.all()
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
-   
-    
+
     def create(self, request, *args, **kwargs):
         try:
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            
+
             user = serializer.save()
-            
-            # Generate tokens
-            refresh = RefreshToken.for_user(user)
-            access_token = refresh.access_token
-            
-            logger.info(f"New user registered: {user.email}")
-            
+            user.is_active = False  # Set inactive until verified by secretariate
+            user.verification_token = default_token_generator.make_token(user)
+            user.save()
+
+            send_user_acknowledgment_email(user)
+
+            # Send notification email to secretariate
+            send_secretariate_notification_email(user)
+
+            logger.info(f"New user registered (pending verification): {user.email}")
+
             return Response({
                 'success': True,
-                'message': 'User registered successfully',
-                'tokens': {
-                    'access': str(access_token),
-                    'refresh': str(refresh)
-                }
+                'message': 'User registered successfully. Please wait for verification by the secretariate.',
+                # No tokens returned; user cannot login until verified
             }, status=status.HTTP_201_CREATED)
-            
+
         except Exception as e:
             logger.error(f"Registration error: {str(e)}")
             return Response({
@@ -108,6 +148,102 @@ class RegisterView(generics.CreateAPIView):
                 'message': 'Registration failed. Please try again.',
                 'errors': getattr(e, 'detail', str(e))
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+
+
+class EmailVerifyView(generics.GenericAPIView):
+    """Email link verification view: GET for validation, PATCH/PUT for approve/reject"""
+    permission_classes = [AllowAny]
+    queryset = CustomUser.objects.all()
+    serializer_class = UserSerializer
+
+    def get(self, request, user_id, token):
+        """Validate token and return user data for review (no action taken)"""
+        try:
+            user = CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'User not found.'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Verify token
+        if not default_token_generator.check_token(user, token):
+            return Response({
+                'success': False,
+                'message': 'Invalid or expired token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+   
+        return Response({
+            'success': True,
+            'message': 'Token valid. User pending approval.',
+            'user': UserSerializer(user).data
+        }, status=status.HTTP_200_OK)
+
+    def patch(self, request, user_id, token):
+        """Handle user activation/approval via PATCH"""
+        return self._handle_action(request, user_id, token)
+
+    def put(self, request, user_id, token):
+        """Alias for PATCH - handle user activation/approval via PUT"""
+        return self._handle_action(request, user_id, token)
+
+    def _handle_action(self, request, user_id, token):
+        """Shared logic for approve/reject actions"""
+        action = request.data.get('action')
+        
+        if action not in ['approve', 'reject']:
+            return Response({
+                'success': False,
+                'message': 'Invalid action. Must be "approve" or "reject".'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            user = CustomUser.objects.get(id=user_id)
+        except CustomUser.DoesNotExist:
+            return Response({
+                'success': False,
+                'message': 'User not found.'
+            }, status=status.HTTP_404_NOT_FOUND)
+
+        # Verify token
+        if not default_token_generator.check_token(user, token):
+            return Response({
+                'success': False,
+                'message': 'Invalid or expired token.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        # Check if user already processed
+        if user.is_active and user.status == UserStatus.ACTIVE:
+            return Response({
+                'success': False,
+                'message': 'User account has already been activated.'
+            }, status=status.HTTP_400_BAD_REQUEST)
+
+        if action == 'approve':
+            user.is_active = True
+            user.status = UserStatus.ACTIVE
+            user.save()
+            send_verification_success_email(user)
+            message = 'User account approved and activated successfully.'
+            logger.info(f"User approved via email verification: {user.email}")
+            
+        else:  # reject
+            user.status = UserStatus.BLOCKED  # Or UserStatus.REJECTED if defined
+            user.is_active = False
+            user.save()
+            send_rejection_email(user)
+            message = 'User account rejected.'
+            logger.info(f"User rejected via email verification: {user.email}")
+
+        return Response({
+            'success': True,
+            'message': message,
+            'user': UserSerializer(user).data
+        }, status=status.HTTP_200_OK)
 
 
 class LoginView(APIView):
@@ -121,7 +257,6 @@ class LoginView(APIView):
             
             user = serializer.validated_data['user']
             
-            # Generate tokens
             refresh = RefreshToken.for_user(user)
             access_token = refresh.access_token
             

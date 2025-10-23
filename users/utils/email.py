@@ -225,3 +225,156 @@ class ProposalEmailService:
     def send_confirmation_email(self, proposal):
         """Send confirmation email for a proposal"""
         return send_confirmation_email(proposal)
+    
+    
+    
+    
+def send_user_acknowledgment_email(user):
+    """Send acknowledgment email to the newly registered user"""
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
+    reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', from_email)
+    
+    try:
+        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email.split('@')[0]
+        
+        context = {
+            'full_name': full_name,
+            'email': user.email,
+            'current_year': timezone.now().year,
+        }
+        
+        subject = 'Account Registration Acknowledged - Awaiting Verification'
+        
+        # Render HTML template
+        html_content = render_to_string('emails/registration_acknowledged.html', context)
+        
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body='',  # Empty body since using HTML
+            from_email=from_email,
+            to=[user.email],
+            reply_to=[reply_to] if reply_to != from_email else None
+        )
+        
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        
+        logger.info(f"Acknowledgment email sent to user: {user.email}")
+        return True
+        
+    except Exception as exc:
+        logger.error(f"Error sending acknowledgment email to {user.email}: {exc}")
+        return False
+
+
+
+def send_secretariate_notification_email(user):
+    """Send notification email to secretariate for verification"""
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
+    secretariate_email = getattr(settings, 'SECRETARIATE_EMAIL', from_email)
+    
+    try:
+        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email.split('@')[0]
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+
+        context = {
+            'full_name': full_name,
+            'email': user.email,
+            'user_id': user.id,
+            'token': user.verification_token,
+            'frontend_url': frontend_url,
+            'current_year': timezone.now().year,
+        }
+
+        subject = 'New Account Registration Request - Requires Verification'
+        html_content = render_to_string('emails/secretariate_notification.html', context)
+        
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body='',
+            from_email=from_email,
+            to=[secretariate_email],
+        )
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
+        logger.info(f"Notification email sent to secretariate for user: {user.email}")
+        return True
+        
+    except Exception as exc:
+        logger.error(f"Error sending notification email for {user.email}: {exc}")
+        return False
+
+def send_verification_success_email(user):
+    """Send verification success email to the user"""
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
+    reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', from_email)
+    
+    try:
+        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email.split('@')[0]
+        
+        context = {
+            'full_name': full_name,
+            'email': user.email,
+            'current_year': timezone.now().year,
+        }
+        
+        subject = 'Account Verified - You Can Now Login'
+        
+        # Render HTML template
+        html_content = render_to_string('emails/verification_success.html', context)
+        
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body='',  # Empty body since using HTML
+            from_email=from_email,
+            to=[user.email],
+            reply_to=[reply_to] if reply_to != from_email else None
+        )
+        
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        
+        logger.info(f"Verification success email sent to: {user.email}")
+        return True
+        
+    except Exception as exc:
+        logger.error(f"Error sending verification success email to {user.email}: {exc}")
+        return False
+    
+    
+def send_rejection_email(user):
+    """Send rejection email to the user"""
+    from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
+    reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
+    
+    try:
+        full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email.split('@')[0]
+        
+        context = {
+            'full_name': full_name,
+            'email': user.email,
+            'current_year': timezone.now().year,
+        }
+        
+        subject = 'Account Registration Declined'
+        
+        html_content = render_to_string('emails/rejection.html', context)
+        
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body='',
+            from_email=from_email,
+            to=[user.email],
+            reply_to=[reply_to] if reply_to != from_email else None
+        )
+        
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+        
+        logger.info(f"Rejection email sent to: {user.email}")
+        return True
+        
+    except Exception as exc:
+        logger.error(f"Error sending rejection email to {user.email}: {exc}")
+        return False

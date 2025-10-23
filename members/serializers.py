@@ -610,7 +610,7 @@ class EventSerializer(serializers.ModelSerializer):
 class FeedbackSerializer(serializers.ModelSerializer):
     class Meta:
         model = Feedback
-        fields = ['id', 'subject', 'message', 'status', 'created_at', 'ip_address', 'user_agent', 'reference_number']
+        fields = ['id', 'subject', 'type','message', 'status', 'created_at', 'ip_address', 'user_agent', 'reference_number']
         read_only_fields = ['id', 'status', 'created_at', 'ip_address', 'user_agent', 'reference_number']
 
 

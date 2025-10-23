@@ -72,6 +72,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     country = models.CharField(max_length=255, blank=True, null=True)
     is_email_verified = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=UserStatus.choices, default=UserStatus.ACTIVE)
+    verification_token = models.CharField(max_length=100, blank=True, null=True)
     
     groups = models.ManyToManyField(
         Group, 

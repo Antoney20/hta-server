@@ -73,6 +73,47 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
 
         return user
+    
+    
+class VerifyUserSerializer(serializers.ModelSerializer):
+    """
+    Serializer for verifying a user account.
+    Allows updating the `is_active` field based on secretariate approval.
+    If `is_active` is set to False, the user's status remains unchanged (already inactive for pending users).
+    """
+    class Meta:
+        model = CustomUser
+        fields = ['is_active']  
+        extra_kwargs = {
+            'is_active': {'required': True}  
+        }
+
+    def validate_is_active(self, value):
+        """
+        Custom validation: If setting to False on a pending user, it remains inactive (no change needed).
+        But allow explicit setting for clarity (e.g., rejection).
+        """
+        if not value:
+            # Optionally, you could set status to REJECTED here if UserStatus has it,
+            # but per requirement, "false remains same" so just allow it without additional logic.
+            pass
+        return value
+
+    def update(self, instance, validated_data):
+        """
+        Override update to handle verification logic.
+        - If is_active=True, activate the user.
+        - If is_active=False, leave as is (already inactive).
+        """
+        if validated_data.get('is_active', False):
+            instance.is_active = True
+            # Optionally set status to ACTIVE if you have a PENDING status
+            # instance.status = UserStatus.ACTIVE
+        else:
+            # Remains the same (inactive)
+            pass
+        instance.save()
+        return instance
 
 class LoginSerializer(serializers.Serializer):
     username_or_email = serializers.CharField()
