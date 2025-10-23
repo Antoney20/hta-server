@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def send_confirmation_email(proposal):
     """Send confirmation email for a proposal"""
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
-    reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', from_email)
+    reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
     
     try:
         print(f"Preparing confirmation email for: {proposal.email}")
@@ -57,7 +57,7 @@ def send_confirmation_email(proposal):
 def send_contact_confirmation_email(contact_submission):
     """Send confirmation email for a contact submission"""
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
-    reply_to = getattr(settings, 'CONTACT_REPLY_TO_EMAIL', from_email)
+    reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
     
     try:
         print(f"Preparing confirmation email for: {contact_submission.email}")
@@ -110,7 +110,7 @@ def send_password_reset_email(user, reset_link):
         bool: True if email sent successfully, False otherwise
     """
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@hbtap.com')
-    reply_to = getattr(settings, 'SUPPORT_EMAIL', from_email)
+    reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
     
     try:
         logger.info(f"Preparing password reset email for: {user.email}")
@@ -166,7 +166,7 @@ def send_password_change_confirmation(user):
         bool: True if email sent successfully, False otherwise
     """
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@hbtap.com')
-    reply_to = getattr(settings, 'SUPPORT_EMAIL', from_email)
+    reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
     
     try:
         logger.info(f"Preparing password change confirmation for: {user.email}")
@@ -220,7 +220,7 @@ class ProposalEmailService:
     
     def __init__(self):
         self.from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
-        self.reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', self.from_email)
+        self.reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', self.from_email)
     
     def send_confirmation_email(self, proposal):
         """Send confirmation email for a proposal"""
@@ -232,7 +232,7 @@ class ProposalEmailService:
 def send_user_acknowledgment_email(user):
     """Send acknowledgment email to the newly registered user"""
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
-    reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', from_email)
+    reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
     
     try:
         full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email.split('@')[0]
@@ -271,11 +271,11 @@ def send_user_acknowledgment_email(user):
 def send_secretariate_notification_email(user):
     """Send notification email to secretariate for verification"""
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
-    secretariate_email = getattr(settings, 'SECRETARIATE_EMAIL', from_email)
+    secretariate_email = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
     
     try:
         full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email.split('@')[0]
-        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'FRONTEND_URL')
 
         context = {
             'full_name': full_name,
@@ -308,7 +308,7 @@ def send_secretariate_notification_email(user):
 def send_verification_success_email(user):
     """Send verification success email to the user"""
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
-    reply_to = getattr(settings, 'PROPOSAL_REPLY_TO_EMAIL', from_email)
+    reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)
     
     try:
         full_name = f"{user.first_name or ''} {user.last_name or ''}".strip() or user.email.split('@')[0]
