@@ -1391,11 +1391,9 @@ class ContactSubmissionViewSet(viewsets.ModelViewSet):
                     status=status.HTTP_429_TOO_MANY_REQUESTS
                 )
             
-            # Add IP address to the data
             data = request.data.copy()
             data['ip_address'] = ip_address
             
-            # Use atomic transaction for better error handling
             with transaction.atomic():
                 serializer = self.get_serializer(data=data)
                 if not serializer.is_valid():
