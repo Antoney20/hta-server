@@ -743,7 +743,7 @@ class Feedback(models.Model):
     """User feedback submission with anonymous support and metadata tracking"""
 
     id = models.UUIDField(default=uuid.uuid4, primary_key=True, editable=False)
-    type = models.TextField(blank=True, null=True)
+    type = models.TextField(blank=True, null=True) #added
     subject = models.CharField(max_length=255, blank=True, null=True)
     message = models.TextField(help_text="Feedback message")
 
