@@ -457,17 +457,54 @@ class FAQSerializer(serializers.ModelSerializer):
         model = FAQ
         fields = '__all__'
 
+# class NewsSerializer(serializers.ModelSerializer):
+#     tags_list = serializers.ReadOnlyField(source='get_tags_list')
+    
+#     class Meta:
+#         model = News
+#         fields = '__all__'
+
+# class GovernanceSerializer(serializers.ModelSerializer):
+#     class Meta:
+#         model = Governance
+#         fields = '__all__'
+
+
+class GovernanceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Governance
+        fields = '__all__'
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        # Fix image URL if it exists
+        if representation.get('image') and representation['image'].startswith('http://localhost'):
+            representation['image'] = representation['image'].replace(
+                'http://localhost', 
+                'https://bptap.health.go.ke'
+            )
+        
+        return representation
+
+
 class NewsSerializer(serializers.ModelSerializer):
     tags_list = serializers.ReadOnlyField(source='get_tags_list')
     
     class Meta:
         model = News
         fields = '__all__'
-
-class GovernanceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Governance
-        fields = '__all__'
+    
+    def to_representation(self, instance):
+        representation = super().to_representation(instance)
+        
+        if representation.get('image') and representation['image'].startswith('http://localhost'):
+            representation['image'] = representation['image'].replace(
+                'http://localhost', 
+                'https://bptap.health.go.ke'
+            )
+        
+        return representation
 
 class MediaResourceSerializer(serializers.ModelSerializer):
     class Meta:
