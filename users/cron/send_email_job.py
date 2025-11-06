@@ -20,9 +20,7 @@ def send_email_cron():
       - Prevent infinite retry loops with a capped retry count
 
     Recommended schedule: every 5–10 minutes via django-crontab.
-
-    Example:
-      */10 * * * * /usr/bin/python3 /path/to/manage.py runcrons
+ 
     """
 
     MAX_RETRIES = 6
