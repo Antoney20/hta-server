@@ -11,95 +11,26 @@ https://docs.djangoproject.com/en/5.2/ref/settings/
 """
 
 from datetime import timedelta
-import json
 import os
 from pathlib import Path
-from django.conf import settings
-from dotenv import load_dotenv
 
-load_dotenv()
+from django.conf import settings
+import json
+
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
 
-# Quick-start development settings - unsuitable for production
-# See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
-
 # Secret Key
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = '83d29a715b21a101f7860ca9c8904b0465edd9fb2c5b2eef2e4f74953920166b'
 
 # Debug mode
-DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+DEBUG = False
 
 # Allowed Hosts
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
-
-
-# Django security settings
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = 'DENY'
-
-# Enable CSRF protection
-CSRF_COOKIE_SECURE = True  
-CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'Lax'
-
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",  
-    "https://localhost:3000", 
-    'https://prod-hta.vercel.app'
-]
-
-
-
-# HTTP security settings
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 year
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SESSION_COOKIE_SECURE = True
-
-
-
-
-# CORS Settings
-CORS_ORIGIN_ALLOW_ALL = False 
-CORS_ALLOW_CREDENTIALS = True 
-
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000', 
-    'https://localhost:3000', 
-    'https://prod-hta.vercel.app'
-]
-
-
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
-]
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
-
-
-# Application definition
+ALLOWED_HOSTS = ['bptap.health.go.ke','localhost','127.0.0.1']
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -113,8 +44,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     # 'rest_framework_simplejwt.token_blacklist',  
     
-    # 'users',
-    'users.apps.UsersConfig',
+    'users',
+   # 'users.apps.UsersConfig',
     'members',
     'corsheaders',
     
@@ -123,16 +54,16 @@ INSTALLED_APPS = [
     'channels_redis',
     #  audit log
     'auditlog',
-    'django_crontab',
+    'django_crontab', # added  new
     
     
 ]
 
+# cronjobs added new
 CRONJOBS = [
-    # Every 10 minutes
-    ('*/10 * * * *', 'users.cron.send_email_job.send_email_cron'),
+    # Every 3 minutes
+    ('*/3 * * * *', 'users.cron.send_email_job.send_email_cron'),
 ]
-
 
 # Channel Layers configuration
 CHANNEL_LAYERS = {
@@ -174,15 +105,9 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'hta.wsgi.application'
 
-
-
-
-
-
-
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 10000,
+    'PAGE_SIZE': 10000000,
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
@@ -200,30 +125,33 @@ REST_FRAMEWORK = {
     ],
 }
 
+CORS_ALLOWED_ORIGINS = [
+    "https://bptap.health.go.ke",
+]
+CSRF_TRUSTED_ORIGINS = [
+    "https://bptap.health.go.ke",
+]
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+     'default': {
+         'ENGINE': 'django.db.backends.sqlite3',
+         'NAME': BASE_DIR / 'db.sqlite3',
+     }
 }
 
 
-
-
-
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': os.getenv('DB_NAME'),
-#         'USER': os.getenv('DB_USER'),
-#         'PASSWORD': os.getenv('DB_PASSWORD'),
-#         'HOST': os.getenv('DB_HOST'),
-#         'PORT': os.getenv('DB_PORT'),
-#     }
-# }
+#DATABASES = {
+#    'default': {
+#       'ENGINE': 'django.db.backends.postgresql',
+#       'NAME': '*****',
+#       'USER': '****',
+#        'PASSWORD': '*******',
+#        'HOST': 'localhost',
+#        'PORT': 5432,
+#    }
+#}
 
 
 
@@ -272,17 +200,13 @@ AUTH_USER_MODEL = 'users.CustomUser'
 STATIC_URL = '/static/'
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
+# MEDIA_URL = '/media/'
 MEDIA_URL = 'https://bptap.health.go.ke/media/'
-# MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # MEDIA_ROOT = BASE_DIR / 'media'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-# Default primary key field type
-# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-fld
+#REACT_APP_DIR = os.path.join(BASE_DIR, 'frontend')
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
-
-
 
 #  jwt settings
 SIMPLE_JWT = {
@@ -345,8 +269,6 @@ CELERY_TASK_ACKS_LATE = True
 CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
 
-VERIFICATION_BASE_URL  = os.getenv('VERIFICATION_BASE_URL')
-
 
 #  email config
 config_path = BASE_DIR / "config.json"
@@ -366,14 +288,11 @@ FRONTEND_URL = config.get('FRONTEND_URL')
 
     
 
-
-
-
+#logging - added cronjob logger
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
 
-    # ────────────────────── FORMATTERS ──────────────────────
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
