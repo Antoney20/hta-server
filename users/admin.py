@@ -16,6 +16,7 @@ from .models import (
     MediaResource,
     ContactSubmission,
     NewsletterSubscription,
+    EmailLog
 )
 
 admin.site.register(CustomUser)
@@ -29,6 +30,7 @@ admin.site.register(Governance)
 admin.site.register(MediaResource)
 admin.site.register(ContactSubmission)
 admin.site.register(NewsletterSubscription)
+admin.site.register(EmailLog)
 
 
 @admin.register(ProposalSubmission)

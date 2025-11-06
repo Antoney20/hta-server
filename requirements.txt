@@ -16,3 +16,4 @@ python-dotenv
 redis
 requests
 user-agents
+django-crontab
