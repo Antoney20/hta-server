@@ -26,7 +26,7 @@ def send_email_cron():
     """
 
     MAX_RETRIES = 6
-    RETRY_INTERVAL = timedelta(minutes=1)
+    RETRY_INTERVAL = timedelta(minutes=5)
 
 
     # Getss unsent or failed emails eligible for retry
