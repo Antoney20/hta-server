@@ -105,6 +105,9 @@ cython_debug/
 
 db.sqlite3
 db.sqlite3
+db.sqlite3-journal
+db-new.sqlite3
+db-new.sqlite3-journal
 
 
 
