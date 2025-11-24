@@ -8,6 +8,7 @@ from django.contrib.auth import get_user_model
 from django.core.exceptions import ObjectDoesNotExist
 from django.utils import timezone
 from user_agents import parse
+from django.db import transaction
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 import logging
 
@@ -17,6 +18,8 @@ from .models import (
     Announcement,
     Channel,
     DecisionRationale,
+    EventDocument,
+    EventImage,
     Feedback,
     ImplementationTracking,
     Message,
@@ -1094,53 +1097,60 @@ class EventViewSet(viewsets.ModelViewSet):
     queryset = Event.objects.all()
     serializer_class = EventSerializer
     permission_classes = [permissions.IsAuthenticated]
-    
+
     def get_queryset(self):
         queryset = Event.objects.all()
-        
-        # Filter by event type if provided
+
         event_type = self.request.query_params.get('event_type')
         if event_type:
             queryset = queryset.filter(event_type__icontains=event_type)
-        
-        # Search functionality
+
         search = self.request.query_params.get('search')
         if search:
             queryset = queryset.filter(
-                Q(title__icontains=search) | 
+                Q(title__icontains=search) |
                 Q(description__icontains=search)
             )
-        
+
         return queryset
-    
-    def perform_create(self, serializer):
-        """Set created_by to current user"""
-        serializer.save(created_by=self.request.user)
-    
+
+    @transaction.atomic
+    def create(self, request, *args, **kwargs):
+        """Create event + upload multiple images + documents"""
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        # Save event
+        event = serializer.save(created_by=request.user)
+
+        # Handle multiple documents
+        documents = request.FILES.getlist("documents")
+        for file in documents:
+            EventDocument.objects.create(event=event, file=file)
+
+        # Handle multiple images
+        images = request.FILES.getlist("images")
+        for img in images:
+            EventImage.objects.create(event=event, image=img)
+
+        return Response(EventSerializer(event).data, status=201)
+
     @action(detail=False, methods=['get'])
     def upcoming(self, request):
-        """Get all upcoming events"""
         now = timezone.now()
-        upcoming_events = Event.objects.filter(start_date__gt=now)
-        serializer = self.get_serializer(upcoming_events, many=True)
-        return Response(serializer.data)
-    
+        events = Event.objects.filter(start_date__gt=now)
+        return Response(self.get_serializer(events, many=True).data)
+
     @action(detail=False, methods=['get'])
     def past(self, request):
-        """Get all past events"""
         now = timezone.now()
-        past_events = Event.objects.filter(start_date__lt=now)
-        serializer = self.get_serializer(past_events, many=True)
-        return Response(serializer.data)
-    
+        events = Event.objects.filter(start_date__lt=now)
+        return Response(self.get_serializer(events, many=True).data)
+
     @action(detail=False, methods=['get'])
     def training(self, request):
-        """Get all training events"""
-        training_events = Event.objects.filter(event_type__icontains='training')
-        serializer = self.get_serializer(training_events, many=True)
-        return Response(serializer.data)
-    
-    
+        events = Event.objects.filter(event_type__icontains='training')
+        return Response(self.get_serializer(events, many=True).data)
 
 class FeedbackViewPermission:
     """

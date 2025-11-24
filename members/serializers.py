@@ -10,6 +10,8 @@ from .models import (
     Channel,
     ChannelMembership,
     DecisionRationale,
+    EventDocument,
+    EventImage,
     Feedback,
     ImplementationTracking,
     Poll,
@@ -596,15 +598,36 @@ class AnnouncementSerializer(serializers.ModelSerializer):
         return super().create(validated_data)
 
 
+
+class EventDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EventDocument
+        fields = ['id', 'file', 'uploaded_at']
+
+
+class EventImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EventImage
+        fields = ['id', 'image', 'caption', 'uploaded_at']
+
+
 class EventSerializer(serializers.ModelSerializer):
     is_upcoming = serializers.BooleanField(read_only=True)
     is_past = serializers.BooleanField(read_only=True)
-    
+
+
+    documents = EventDocumentSerializer(many=True, read_only=True)
+    images = EventImageSerializer(many=True, read_only=True)
+
     class Meta:
         model = Event
         fields = '__all__'
-        read_only_fields = ['id', 'created_at', 'updated_at', 'created_by']
-        
+        read_only_fields = [
+            'id',
+            'created_at',
+            'updated_at',
+            'created_by',
+        ]
 
 
 class FeedbackSerializer(serializers.ModelSerializer):

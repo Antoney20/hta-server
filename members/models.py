@@ -704,40 +704,62 @@ class Event(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     title = models.CharField(max_length=200, db_index=True)
     description = models.TextField(blank=True, null=True)
-    event_type = models.CharField(max_length=100, blank=True, null=True)  # meeting, training, deadline, 
-    
+    event_type = models.CharField(max_length=100, blank=True, null=True)
+
     start_date = models.DateTimeField(db_index=True)
     end_date = models.DateTimeField(blank=True, null=True)
-    
-    location = models.CharField(max_length=255, blank=True, null=True) 
-    link = models.URLField(blank=True, null=True)  # Meeting/invite link
-    
+
+    location = models.CharField(max_length=255, blank=True, null=True)
+    link = models.URLField(blank=True, null=True)
+
     # Metadata
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_events')
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, related_name='created_events'
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
     class Meta:
         ordering = ['start_date']
         indexes = [
             models.Index(fields=['start_date', 'event_type']),
             models.Index(fields=['-created_at']),
         ]
-    
+
     def __str__(self):
         return f"{self.title} - {self.start_date.strftime('%Y-%m-%d')}"
-    
+
     @property
     def is_upcoming(self):
-        """Check if event is in the future"""
         return self.start_date > timezone.now()
-    
+
     @property
     def is_past(self):
-        """Check if event is in the past"""
         end = self.end_date or self.start_date
         return end < timezone.now()
 
+
+
+class EventDocument(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='documents')
+    file = models.FileField(upload_to='events/documents/')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Document for {self.event.title}"
+
+
+
+class EventImage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    event = models.ForeignKey(Event, on_delete=models.CASCADE, related_name='images')
+    image = models.ImageField(upload_to='events/images/')
+    caption = models.CharField(max_length=255, blank=True, null=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Image for {self.event.title}"
 
 class Feedback(models.Model):
     """User feedback submission with anonymous support and metadata tracking"""
