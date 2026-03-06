@@ -44,7 +44,8 @@ urlpatterns = [
     path('intervention-proposal/', InterventionProposalView.as_view(), name='intervention_proposal'),
     path('check-multiple-submissions/', check_multiple_submissions, name='check_multiple_submissions'),
     path('proposals/', InterventionProposalListView.as_view(), name='intervention-proposal-list'),
-    path('proposals/<int:id>/', views.InterventionProposalDetailView.as_view(), name='intervention-proposal-detail'),
+    # path('proposals/<int:id>/', views.InterventionProposalDetailView.as_view(), name='intervention-proposal-detail'),
+    path('proposals/<uuid:id>/', views.InterventionProposalDetailView.as_view(), name='intervention-proposal-detail'),
     path('proposal-submissions/', ProposalSubmissionListView.as_view(), name='proposal-submission-list'),
     
     path('members/', MemberListAPIView.as_view(), name='member-list'),
