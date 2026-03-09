@@ -148,7 +148,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ('id', 'username', 'email', 'first_name', 'last_name', 
-                 'profile_image', 'country', 'is_email_verified', 'status')
+                 'profile_image', 'country', 'is_email_verified', 'status','role')
         read_only_fields = ('id', 'is_email_verified', 'status')
 
 
@@ -170,7 +170,6 @@ class MemberSerializer(serializers.ModelSerializer):
             last = phone[-2:]
             representation['phone_number'] = f"{first}{'*' * (len(phone) - 4)}{last}"
 
-        # Obfuscate email if available in user
         user_data = representation.get('user')
         if user_data:
             email = user_data.get('email')
@@ -214,6 +213,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             'status',
             'is_blocked',
             'last_login',
+            'role',
             'member'
         ]
         read_only_fields = [
@@ -376,10 +376,6 @@ class ProposalDocumentSerializer(serializers.ModelSerializer):
 def _mask(value: str) -> str:
     """
     Masks a string: keeps first and last char, replaces middle with ********.
-    e.g. "Lucy Wanjiku" → "L**********u"
-         "+254777000007" → "+***********7"
-         "lucy.w@moh.go.ke" → "l**************e"
-    Returns empty string unchanged.
     """
     if not value or len(value) <= 2:
         return value

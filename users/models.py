@@ -27,13 +27,42 @@ class UserRole:
     SECRETARIATE = 'secretariate'
     CONTENT_MANAGER = 'content_manager'
     USER = 'user'
+    SWG = 'swg'
 
     CHOICES = [
         (ADMIN, 'Admin'),
         (SECRETARIATE, 'Secretariate'),
         (CONTENT_MANAGER, 'Content Manager'),
         (USER, 'User'),
+        (SWG, 'SWG'),
     ]
+
+
+# class CustomUserManager(BaseUserManager):
+#     def create_user(self, email, username, password=None, **extra_fields):
+#         if not email:
+#             raise ValueError("The Email field must be set")
+#         if not username:
+#             raise ValueError("The Username field must be set")
+
+#         email = self.normalize_email(email)
+#         user = self.model(email=email, username=username, **extra_fields)
+#         user.set_password(password)
+#         user.save(using=self._db)
+        
+        
+#         user_role_group, _ = Group.objects.get_or_create(name=UserRole.USER)
+#         user.groups.add(user_role_group)
+
+#         return user
+
+#     def create_superuser(self, email, username, password=None, **extra_fields):
+#         extra_fields.setdefault("is_staff", True)
+#         extra_fields.setdefault("is_superuser", True)
+#         extra_fields.setdefault("is_active", True)
+#         extra_fields.setdefault("status", UserStatus.ACTIVE)
+#         return self.create_user(email, username, password, **extra_fields)
+
 
 
 class CustomUserManager(BaseUserManager):
@@ -43,22 +72,20 @@ class CustomUserManager(BaseUserManager):
         if not username:
             raise ValueError("The Username field must be set")
 
+        extra_fields.setdefault('role', UserRole.USER) 
+
         email = self.normalize_email(email)
         user = self.model(email=email, username=username, **extra_fields)
         user.set_password(password)
         user.save(using=self._db)
-        
-        
-        user_role_group, _ = Group.objects.get_or_create(name=UserRole.USER)
-        user.groups.add(user_role_group)
-
-        return user
+        return user 
 
     def create_superuser(self, email, username, password=None, **extra_fields):
         extra_fields.setdefault("is_staff", True)
         extra_fields.setdefault("is_superuser", True)
         extra_fields.setdefault("is_active", True)
         extra_fields.setdefault("status", UserStatus.ACTIVE)
+        extra_fields.setdefault("role", UserRole.ADMIN)  
         return self.create_user(email, username, password, **extra_fields)
 
 class CustomUser(AbstractBaseUser, PermissionsMixin):
@@ -74,7 +101,11 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     is_email_verified = models.BooleanField(default=False)
     status = models.CharField(max_length=20, choices=UserStatus.choices, default=UserStatus.ACTIVE)
     verification_token = models.CharField(max_length=100, blank=True, null=True)
-    
+    role = models.CharField(
+        max_length=20,
+        choices=UserRole.CHOICES,
+        default=UserRole.USER
+    )
     groups = models.ManyToManyField(
         Group, 
         related_name="custom_users", 
@@ -96,20 +127,23 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.username
 
-    def has_role(self, group_name):
-        return self.groups.filter(name=group_name).exists()
-    
+    def has_role(self, role_name):
+        return self.role == role_name
+
     def is_admin(self):
-        return self.has_role(UserRole.ADMIN)
+        return self.role == UserRole.ADMIN
 
     def is_secretariate(self):
-        return self.has_role(UserRole.SECRETARIATE)
+        return self.role == UserRole.SECRETARIATE
 
     def is_content_manager(self):
-        return self.has_role(UserRole.CONTENT_MANAGER)
+        return self.role == UserRole.CONTENT_MANAGER
 
     def is_regular_user(self):
-        return self.has_role(UserRole.USER)
+        return self.role == UserRole.USER
+
+    def is_swg(self):
+        return self.role == UserRole.SWG
 
 
     @property

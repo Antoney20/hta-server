@@ -4,7 +4,7 @@ from rest_framework.response import Response
 from rest_framework import permissions, status
 from dataclasses import asdict
 from rest_framework.views import APIView
-
+from users.permissions import IsAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
 
 from .models import SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
@@ -20,19 +20,20 @@ from .serializers import (
 class SelectionToolViewSet(viewsets.ModelViewSet):
     queryset = SelectionTool.objects.all()
     serializer_class = SelectionToolSerializer
-    # permission_classes = [permissions.IsAuthenticated]
+    # access to everyone except SWGs
+    permission_classes = [permissions.IsAuthenticated, ~IsSWG]
 
 
 class SystemCategoryViewSet(viewsets.ModelViewSet):
     queryset = SystemCategory.objects.all()
     serializer_class = SystemCategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, ~IsSWG]
 
 
 class InterventionSystemCategoryViewSet(viewsets.ModelViewSet):
     queryset = InterventionSystemCategory.objects.select_related("intervention", "system_category")
     serializer_class = InterventionSystemCategorySerializer
-    permission_classes = [permissions.IsAuthenticated]
+    permission_classes = [permissions.IsAuthenticated, ~IsSWG]
 
     def get_queryset(self):
         qs = super().get_queryset()
