@@ -103,7 +103,7 @@ INSTALLED_APPS = [
     'users',
    # 'users.apps.UsersConfig',
     'members',
-    'app'
+    'app',
     'corsheaders',
     
     # 
@@ -231,12 +231,11 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Nairobi'
 
 USE_I18N = True
 
 USE_TZ = True
-
 
 
 AUTH_USER_MODEL = 'users.CustomUser'
@@ -323,16 +322,16 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Nairobi'
 
 # routing for different queues. and tasks
-CELERY_TASK_ROUTES = {
-    'users.tasks.process_proposal_submission': {'queue': 'proposals'},
-    'users.tasks.process_file_upload': {'queue': 'files'},
-    'users.tasks.send_confirmation_email': {'queue': 'emails'},
-}
+# CELERY_TASK_ROUTES = {
+#     'users.tasks.process_proposal_submission': {'queue': 'proposals'},
+#     'users.tasks.process_file_upload': {'queue': 'files'},
+#     'users.tasks.send_confirmation_email': {'queue': 'emails'},
+# }
 
-# Worker configuration
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1
-CELERY_TASK_ACKS_LATE = True
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
+# # Worker configuration
+# CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# CELERY_TASK_ACKS_LATE = True
+# CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
 
 #  email config
