@@ -7,7 +7,7 @@ from users.models import InterventionProposal
 from auditlog.registry import auditlog
 
 from django.db import models, transaction
-from django.db.models import Max
+from django.db.models import Q, CheckConstraint, Max
 import datetime
 
 User = get_user_model()
@@ -366,6 +366,12 @@ class Message(models.Model):
             models.Index(fields=['channel', 'created_at']),
             models.Index(fields=['user']),
             models.Index(fields=['parent_message']), 
+        ]
+        constraints = [
+            CheckConstraint(
+                condition=~Q(content=''),
+                name='non_empty_message_content'
+            )
         ]
        
 
