@@ -100,6 +100,8 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     # 'rest_framework_simplejwt.token_blacklist',  
     
+
+    
     'users',
    # 'users.apps.UsersConfig',
     'members',
@@ -114,8 +116,6 @@ INSTALLED_APPS = [
     
     
 ]
-
-
 
 # Channel Layers configuration
 CHANNEL_LAYERS = {

@@ -27,6 +27,7 @@ class InterventionScoreReport:
     reference_number: str
     intervention_name: str
     intervention_type: Optional[str]
+    system_categories: list[str]  
     max_possible_score: int
     criteria_scored: int    # unique criteria names scored (by any reviewer)
     criteria_total: int     # total unique criteria available
@@ -161,6 +162,12 @@ class ScoringReportService:
         for intervention in interventions:
             iid = str(intervention.id)
             scores = scores_by_intervention.get(iid, [])
+            
+            system_categories = [
+                sc.system_category.name          # adjust field name if needed
+                for sc in intervention.system_categories.all()
+            ]
+
 
             # ── Per-reviewer breakdown ────────────────────────────────────────
             scores_by_reviewer: dict[int, list] = {}
@@ -202,6 +209,7 @@ class ScoringReportService:
                 reference_number=getattr(intervention, "reference_number", iid),
                 intervention_name=getattr(intervention, "intervention_name", str(intervention)),
                 intervention_type=getattr(intervention, "intervention_type", None),
+                system_categories=system_categories,
                 max_possible_score=max_possible,
                 criteria_scored=criteria_scored,
                 criteria_total=criteria_count,
