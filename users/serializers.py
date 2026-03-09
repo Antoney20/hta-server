@@ -148,7 +148,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = CustomUser
         fields = ('id', 'username', 'email', 'first_name', 'last_name', 
-                 'profile_image', 'country', 'is_email_verified', 'status')
+                 'profile_image', 'country', 'is_email_verified', 'status','role')
         read_only_fields = ('id', 'is_email_verified', 'status')
 
 
@@ -170,7 +170,6 @@ class MemberSerializer(serializers.ModelSerializer):
             last = phone[-2:]
             representation['phone_number'] = f"{first}{'*' * (len(phone) - 4)}{last}"
 
-        # Obfuscate email if available in user
         user_data = representation.get('user')
         if user_data:
             email = user_data.get('email')
@@ -214,6 +213,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             'status',
             'is_blocked',
             'last_login',
+            'role',
             'member'
         ]
         read_only_fields = [
@@ -306,6 +306,85 @@ class ProposalDocumentSerializer(serializers.ModelSerializer):
         return None
 
 
+# class InterventionProposalSerializer(serializers.ModelSerializer):
+#     uploaded_documents = serializers.ListField(
+#         child=serializers.FileField(max_length=255, allow_empty_file=False),
+#         write_only=True,
+#         required=False
+#     )
+#     uploadedDocument = serializers.FileField(
+#         max_length=255, allow_empty_file=False, write_only=True, required=False
+#     )
+    
+#     # Add these fields to handle camelCase from frontend
+#     interventionName = serializers.CharField(
+#         source='intervention_name', 
+#         required=False, 
+#         allow_blank=True, 
+#         allow_null=True
+#     )
+#     interventionType = serializers.CharField(
+#         source='intervention_type', 
+#         required=False, 
+#         allow_blank=True, 
+#         allow_null=True
+#     )
+    
+#     # Add this to properly serialize documents
+#     documents = ProposalDocumentSerializer(many=True, read_only=True)
+
+#     class Meta:
+#         model = InterventionProposal
+#         fields = [
+#             'id',
+#             'name', 'phone', 'email', 'profession', 'organization', 'county',
+#             'intervention_name', 'intervention_type', 'beneficiary',
+#             'justification', 'expected_impact', 'additional_info', 'reference_number',
+#             'signature', 'date', 'uploaded_documents', 'uploadedDocument', 'is_public',
+#             'interventionName', 'interventionType',
+#             'documents'  
+#         ]
+#         read_only_fields = ['id', 'reference_number', 'documents']
+
+#     def create(self, validated_data):
+#         # Remove camelCase fields from validated_data
+#         validated_data.pop('interventionName', None)
+#         validated_data.pop('interventionType', None)
+        
+#         uploaded_documents = validated_data.pop('uploaded_documents', [])
+#         uploaded_document = validated_data.pop('uploadedDocument', None)
+        
+#         if uploaded_document:
+#             uploaded_documents.append(uploaded_document)
+        
+#         proposal = InterventionProposal.objects.create(**validated_data)
+        
+#         for document in uploaded_documents:
+#             logger.info(f"Saving document: {document.name}")
+#             ProposalDocument.objects.create(
+#                 proposal=proposal,
+#                 document=document,
+#                 original_name=document.name,
+#                 is_public=proposal.is_public
+#             )
+        
+#         logger.info(f"Proposal {proposal.id} created with {proposal.documents.count()} documents")
+#         return proposal
+
+
+
+def _mask(value: str) -> str:
+    """
+    Masks a string: keeps first and last char, replaces middle with ********.
+    """
+    if not value or len(value) <= 2:
+        return value
+    return f"{value[0]}{'*' * (len(value) - 2)}{value[-1]}"
+
+
+MASKED_FIELDS = ["name", "phone", "email", "county", "signature"]
+
+
 class InterventionProposalSerializer(serializers.ModelSerializer):
     uploaded_documents = serializers.ListField(
         child=serializers.FileField(max_length=255, allow_empty_file=False),
@@ -315,22 +394,18 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
     uploadedDocument = serializers.FileField(
         max_length=255, allow_empty_file=False, write_only=True, required=False
     )
-    
-    # Add these fields to handle camelCase from frontend
     interventionName = serializers.CharField(
-        source='intervention_name', 
-        required=False, 
-        allow_blank=True, 
+        source='intervention_name',
+        required=False,
+        allow_blank=True,
         allow_null=True
     )
     interventionType = serializers.CharField(
-        source='intervention_type', 
-        required=False, 
-        allow_blank=True, 
+        source='intervention_type',
+        required=False,
+        allow_blank=True,
         allow_null=True
     )
-    
-    # Add this to properly serialize documents
     documents = ProposalDocumentSerializer(many=True, read_only=True)
 
     class Meta:
@@ -342,23 +417,29 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
             'justification', 'expected_impact', 'additional_info', 'reference_number',
             'signature', 'date', 'uploaded_documents', 'uploadedDocument', 'is_public',
             'interventionName', 'interventionType',
-            'documents'  
+            'documents'
         ]
         read_only_fields = ['id', 'reference_number', 'documents']
 
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        for field in MASKED_FIELDS:
+            if field in data and data[field]:
+                data[field] = _mask(str(data[field]))
+        return data
+
     def create(self, validated_data):
-        # Remove camelCase fields from validated_data
         validated_data.pop('interventionName', None)
         validated_data.pop('interventionType', None)
-        
+
         uploaded_documents = validated_data.pop('uploaded_documents', [])
         uploaded_document = validated_data.pop('uploadedDocument', None)
-        
+
         if uploaded_document:
             uploaded_documents.append(uploaded_document)
-        
+
         proposal = InterventionProposal.objects.create(**validated_data)
-        
+
         for document in uploaded_documents:
             logger.info(f"Saving document: {document.name}")
             ProposalDocument.objects.create(
@@ -367,7 +448,7 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
                 original_name=document.name,
                 is_public=proposal.is_public
             )
-        
+
         logger.info(f"Proposal {proposal.id} created with {proposal.documents.count()} documents")
         return proposal
 

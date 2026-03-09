@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/admin/', admin.site.urls),
     path('api/v1/', include('users.urls')),
     path('api/v2/', include('members.urls')),
+    path('api/v3/', include('app.urls')),
 ]
 if settings.DEBUG:
     urlpatterns += staticfiles_urlpatterns()

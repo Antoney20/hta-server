@@ -113,3 +113,5 @@ db-new.sqlite3-journal
 
 
 config.json
+live_settings.py
+
