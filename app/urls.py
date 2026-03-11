@@ -2,6 +2,7 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     AdminScoreViewSet,
+    PublicProposalViewSet,
     ScoringReportView,
     SelectionToolViewSet,
     SystemCategoryViewSet,
@@ -15,6 +16,7 @@ router.register("system-categories", SystemCategoryViewSet, basename="system-cat
 router.register("intervention-categories", InterventionSystemCategoryViewSet, basename="intervention-category")
 router.register("intervention-scores", InterventionScoreViewSet, basename="intervention-score")
 router.register(r"admin-report", AdminScoreViewSet, basename="admin-report")
+router.register(r"proposals",  PublicProposalViewSet, basename="public-proposals")
 
 
 

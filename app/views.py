@@ -1,9 +1,13 @@
 from rest_framework import viewsets, permissions
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.viewsets import ViewSet
 from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
+
 from rest_framework import permissions, status
 from dataclasses import asdict
 from rest_framework.views import APIView
+from app.services.public_view import PublicProposalService
 from users.permissions import IsAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
 
@@ -41,26 +45,6 @@ class InterventionSystemCategoryViewSet(viewsets.ModelViewSet):
         if intervention_id:
             qs = qs.filter(intervention_id=intervention_id)
         return qs
-
-
-
-# class InterventionScoreViewSet(viewsets.ModelViewSet):
-#     queryset = InterventionScore.objects.select_related("reviewer", "intervention", "criteria")
-#     serializer_class = InterventionScoreSerializer
-#     permission_classes = [permissions.IsAuthenticated]
-
-#     def get_queryset(self):
-#         qs = super().get_queryset()
-        
-#         # Always scope to the current user's scores only
-#         qs = qs.filter(reviewer=self.request.user)
-        
-#         intervention_id = self.request.query_params.get("intervention")
-#         if intervention_id:
-#             qs = qs.filter(intervention_id=intervention_id)
-#         return qs
-     
-     
      
 
 class InterventionScoreViewSet(viewsets.ModelViewSet):
@@ -143,3 +127,11 @@ class AdminScoreViewSet(viewsets.ModelViewSet):
             qs = qs.filter(intervention_id=intervention_id)
 
         return qs
+    
+    
+# new public proposals viewset, should allow anyone to see  for now.
+class PublicProposalViewSet(ViewSet):
+    permission_classes = [AllowAny]
+
+    def list(self, request):
+        return Response(PublicProposalService.fetch())
