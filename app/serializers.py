@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import InterventionProposal
-from .models import SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import CriteriaInformation, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 
 
 class SelectionToolSerializer(serializers.ModelSerializer):
@@ -17,11 +17,91 @@ class SystemCategorySerializer(serializers.ModelSerializer):
 
 
 class InterventionSystemCategorySerializer(serializers.ModelSerializer):
+    system_category_detail = SystemCategorySerializer(
+        source="system_category",
+        read_only=True
+    )
+
     class Meta:
         model = InterventionSystemCategory
-        fields = "__all__"
+        fields = [
+            "id",
+            "intervention",
+            "system_category",
+            "system_category_detail",
+            "assigned_by",
+            "created_at",
+        ]
 
 
+
+class CriteriaInformationSerializer(serializers.ModelSerializer):
+    intervention_name = serializers.CharField(
+        source="intervention.name", read_only=True
+    )
+    intervention_reference_number = serializers.CharField(
+        source="intervention.reference_number", read_only=True
+    )
+    system_category_name = serializers.SerializerMethodField()
+    created_by_name = serializers.CharField(
+        source="created_by.get_full_name", read_only=True
+    )
+ 
+    class Meta:
+        model = CriteriaInformation
+        fields = [
+            "id",
+            "intervention",
+            "intervention_name",
+            "intervention_reference_number",
+            "system_category_name",
+            "created_by",
+            "created_by_name",
+            "brief_info",
+            "clinical_effectiveness",
+            "burden_of_disease",
+            "bod_type",
+            "population",
+            "equity",
+            "cost_effectiveness",
+            "budget_impact_affordability",
+            "feasibility_of_implementation",
+            "catastrophic_health_expenditure",
+            "access_to_healthcare",
+            "congruence_with_health_priorities",
+            "additional_info",
+            "created_at",
+            "updated_at",
+        ]
+ 
+    def get_system_category_name(self, obj) -> str | None:
+        """
+        Resolve the system category name via InterventionSystemCategory.
+        Returns None if no category has been assigned to the intervention.
+        """
+        isc = (
+            InterventionSystemCategory.objects
+            .select_related("system_category")
+            .filter(intervention=obj.intervention)
+            .first()
+        )
+        return isc.system_category.name if isc else None
+
+class CriteriaInformationCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CriteriaInformation
+        fields = [
+            "intervention", 
+            "brief_info", "clinical_effectiveness",
+            "burden_of_disease", "bod_type", "population",
+            "equity", "cost_effectiveness",
+            "budget_impact_affordability",
+            "feasibility_of_implementation",
+            "catastrophic_health_expenditure",
+            "access_to_healthcare",
+            "congruence_with_health_priorities",
+            "additional_info",
+        ]
 
 
 class InterventionScoreCreateSerializer(serializers.ModelSerializer):
