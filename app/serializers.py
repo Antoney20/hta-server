@@ -37,7 +37,7 @@ class InterventionSystemCategorySerializer(serializers.ModelSerializer):
 
 class CriteriaInformationSerializer(serializers.ModelSerializer):
     intervention_name = serializers.CharField(
-        source="intervention.name", read_only=True
+        source="intervention.intervention_name", read_only=True
     )
     intervention_reference_number = serializers.CharField(
         source="intervention.reference_number", read_only=True
