@@ -1,58 +1,173 @@
+CEMA Research and Evaluation Source-Available License v1.0
+
 Copyright (c) 2026 Center for Epidemiological Modelling and Analysis (CEMA)
+All rights reserved.
 
-Public Non-Commercial License v1.0
 
-1. Definitions
+1. License Status
 
-"Software" means the source code, documentation, and any associated files made available in this repository.
+This Software is made available under a source-available license.
+It is not open source software. Rights are limited strictly to those
+expressly granted under this License.
 
-"Commercial Use" means any use that is primarily intended for or directed toward commercial advantage, monetary compensation, revenue generation, or use within a for-profit entity in support of commercial activities.
 
-2. Grant of License
+2. Definitions
 
-Subject to the terms of this License, Center for Epidemiological Modelling and Analysis (CEMA) grants a worldwide, royalty-free, non-exclusive, non-transferable license to:
+"CEMA" means the Center for Epidemiological Modelling and Analysis.
 
-- View and download the Software;
-- Use the Software for governmental, public-sector, academic, research, or other strictly non-commercial purposes;
-- Modify the Software for strictly non-commercial purposes.
+"Software" means all source code, documentation, configuration files,
+data schemas, scripts, models, and any other materials made available
+in this repository.
 
-3. Restrictions
+"Permitted Purpose" means solely:
 
-Commercial Use of the Software is strictly prohibited without prior express written permission from CEMA.
+- reviewing the Software,
+- evaluating the Software, or
+- conducting non-commercial academic research relating to the Software.
 
-Prohibited Commercial Use includes, but is not limited to:
+"You" means any individual or legal entity accessing or using the Software.
 
-- Selling or licensing the Software;
-- Distributing the Software as part of a paid product or service;
-- Providing paid hosting, SaaS, or managed services based on the Software;
-- Using the Software within a for-profit organization in connection with revenue-generating activities;
-- Offering consulting or integration services where the Software constitutes a material component of the service.
+"Commercial Use" means any use intended for or directed toward commercial
+advantage, monetary compensation, revenue generation, contractual service
+delivery, or use within a for-profit entity.
 
-4. Redistribution
+"Operational Use" means use of the Software in production systems,
+decision-making systems, service delivery environments, deployed platforms,
+or real-world operational workflows.
 
-Redistribution of the Software in source form is permitted for non-commercial purposes only, provided that:
 
-- This License is included in full;
-- All copyright notices are preserved;
-- Any modifications are clearly documented.
+3. Limited License Grant
 
-Redistribution for Commercial Use is prohibited without prior written permission from CEMA.
+Subject to the terms of this License, CEMA grants You a limited,
+worldwide, non-exclusive, non-transferable, and revocable license to:
 
-5. Ownership
+1. View and download the Software.
+2. Execute the Software solely for the Permitted Purpose.
+3. Modify the Software solely for internal evaluation or academic research
+   related to the Permitted Purpose.
 
-The Software is and shall remain the exclusive property of Center for Epidemiological Modelling and Analysis (CEMA). All rights not expressly granted under this License are reserved.
+No other rights are granted.
 
-6. No Warranty
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NON-INFRINGEMENT.
+4. Prohibited Uses
 
-7. Limitation of Liability
+Except as explicitly permitted in Section 3, You may not:
 
-IN NO EVENT SHALL CEMA BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN CONTRACT, TORT, OR OTHERWISE, ARISING FROM OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+- use the Software for any Commercial Use;
+- use the Software for Operational Use;
+- deploy the Software in production systems;
+- use the Software within government programs, NGOs, corporations,
+  or institutional systems;
+- incorporate the Software into another software project;
+- integrate the Software into a product, service, or platform;
+- offer consulting, analytics, or services based on the Software;
+- provide hosting, APIs, SaaS, or managed services derived from the Software;
+- create competing systems using the Software as a foundation;
+- use the Software to train or develop machine learning or artificial
+  intelligence systems;
+- remove or alter copyright notices.
 
-8. Commercial Licensing
+Use within for-profit organizations, funded projects, consulting
+engagements, or revenue-generating activities is strictly prohibited
+without prior written authorization from CEMA.
 
-For commercial licensing inquiries, please contact:
+
+5. Redistribution
+
+You may not distribute, publish, sublicense, or otherwise make the
+Software available to third parties, in whole or in part, without
+prior written permission from CEMA.
+
+This prohibition applies to:
+
+- source code
+- compiled versions
+- modified versions
+- container images
+- hosted versions
+- mirrored repositories
+
+
+6. Modifications
+
+You may modify the Software only for internal evaluation or academic
+research purposes.
+
+Modified versions:
+
+- may not be distributed,
+- may not be deployed operationally,
+- may not be shared outside the organization conducting the research.
+
+All modifications must retain original copyright notices.
+
+
+7. Ownership
+
+The Software and all intellectual property rights therein remain the
+exclusive property of CEMA.
+
+This License does not grant any rights to:
+
+- CEMA trademarks
+- service marks
+- logos
+- branding
+
+All rights not expressly granted under this License are reserved.
+
+
+8. Termination
+
+This License automatically terminates if You violate any term of
+this License.
+
+Upon termination You must immediately:
+
+- cease all use of the Software, and
+- delete all copies of the Software and any modifications.
+
+Termination does not limit any other rights or remedies available to CEMA.
+
+
+9. No Warranty
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO WARRANTIES OF:
+
+- MERCHANTABILITY
+- FITNESS FOR A PARTICULAR PURPOSE
+- NON-INFRINGEMENT
+
+CEMA does not guarantee the accuracy, reliability, or suitability
+of the Software.
+
+
+10. Limitation of Liability
+
+IN NO EVENT SHALL CEMA BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER
+LIABILITY ARISING FROM, OUT OF, OR IN CONNECTION WITH:
+
+- THE SOFTWARE, OR
+- THE USE OR INABILITY TO USE THE SOFTWARE.
+
+This limitation applies whether the claim arises in contract, tort,
+negligence, or otherwise.
+
+
+11. Commercial and Operational Licensing
+
+Any use of the Software outside the Permitted Purpose requires a
+separate written license from CEMA.
+
+For commercial, governmental, operational, or partnership licensing
+inquiries contact:
+
 info@cema.africa
 
-By accessing or using the Software, you agree to the terms of this License.
+
+12. Acceptance
+
+By accessing, downloading, copying, executing, or otherwise using the
+Software, You acknowledge that You have read and agree to be bound by
+the terms of this License.
