@@ -1,7 +1,7 @@
 from django.core.cache import cache
 from app.models import CriteriaInformation
 
-CACHE_TTL = 60 * 1
+CACHE_TTL = 60 * 15
 
 
 def _cache_key(intervention_id: str) -> str:

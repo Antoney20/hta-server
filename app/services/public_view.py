@@ -24,7 +24,7 @@ class PublicProposalService:
     def _query():
         return (
             InterventionProposal.objects
-            .filter(is_public=True)
+            .filter()
             .only(
                 "id",
                 "reference_number",
