@@ -9,8 +9,6 @@ from users.models import InterventionProposal
 User = get_user_model()
 
 
-
-
 class SelectionTool(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     criteria = models.CharField(max_length=255)
@@ -65,6 +63,59 @@ class InterventionSystemCategory(models.Model):
         return f"{self.intervention} → {self.system_category}"
 
     
+    
+class CriteriaInformation(models.Model):
+    """
+    Stores detailed qualitative information for HTA criteria
+    linked to an intervention.
+    """
+
+    BURDEN_TYPE_CHOICES = [
+        ("DALY", "DALY"),
+        ("QALY", "QALY"),
+        ("PREVALENCE", "Prevalence"),
+        ("INCIDENCE", "Incidence"),
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    intervention = models.ForeignKey(
+        InterventionProposal,
+        on_delete=models.CASCADE,
+        related_name="criteria_information"
+    )
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL,null=True, blank=True)
+    brief_info= models.TextField(null=True, blank=True)
+    clinical_effectiveness = models.TextField(null=True, blank=True)
+    burden_of_disease = models.TextField(null=True, blank=True)
+    bod_type = models.CharField(
+        max_length=20,
+        choices=BURDEN_TYPE_CHOICES,
+        null=True,
+        blank=True
+    ) #will be joining with bod
+    population = models.TextField(null=True, blank=True)
+    equity = models.TextField(null=True, blank=True)
+    cost_effectiveness = models.TextField(null=True, blank=True)
+    budget_impact_affordability = models.TextField(null=True, blank=True)
+    feasibility_of_implementation = models.TextField(null=True, blank=True)
+    catastrophic_health_expenditure = models.TextField(null=True, blank=True)
+    access_to_healthcare = models.TextField(null=True, blank=True)
+    congruence_with_health_priorities = models.TextField(null=True, blank=True)
+    additional_info = models.TextField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["intervention"], name="idx_criteria_intervention"),
+        ]
+
+    def __str__(self):
+        return f"Criteria Info — {self.intervention}"    
+    
 class InterventionScore(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     reviewer = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -85,3 +136,4 @@ auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
 auditlog.register(InterventionSystemCategory)
 auditlog.register(InterventionScore)
+auditlog.register(CriteriaInformation)

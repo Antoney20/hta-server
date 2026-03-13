@@ -44,7 +44,7 @@ from users.serializers import ContactSubmissionSerializer, FAQSerializer, Govern
 from .models import FAQ, ContactSubmission, CustomUser, Governance, InterventionProposal, MediaResource, Member, News, NewsletterSubscription, ProposalSubmission, TemporaryFile, ProposalSubmissionStatus, ProposalDocument, UserStatus
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
-from .tasks import retry_failed_proposal_submission, send_proposal_confirmation_email_task
+# from .tasks import retry_failed_proposal_submission, send_proposal_confirmation_email_task
 from members.models import Announcement, Channel, PriorityLevel, ProposalTracker, ReviewComment, ReviewStage, ReviewerAssignment, Task, TaskStatus, ThematicArea,  Event
 from .utils.email import send_confirmation_email, send_password_change_confirmation, send_password_reset_email, send_contact_confirmation_email,  send_user_acknowledgment_email,  send_secretariate_notification_email, send_verification_success_email,  send_rejection_email
 
