@@ -24,14 +24,14 @@ class UserStatus(models.TextChoices):
     
 class UserRole:
     ADMIN = 'admin'
-    SECRETARIATE = 'secretariate'
+    SECRETARIAT = 'secretariat'
     CONTENT_MANAGER = 'content_manager'
     USER = 'user'
     SWG = 'swg'
 
     CHOICES = [
         (ADMIN, 'Admin'),
-        (SECRETARIATE, 'Secretariate'),
+        (SECRETARIAT, 'Secretariat'),
         (CONTENT_MANAGER, 'Content Manager'),
         (USER, 'User'),
         (SWG, 'SWG'),
@@ -134,7 +134,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         return self.role == UserRole.ADMIN
 
     def is_secretariate(self):
-        return self.role == UserRole.SECRETARIATE
+        return self.role == UserRole.SECRETARIAT
 
     def is_content_manager(self):
         return self.role == UserRole.CONTENT_MANAGER

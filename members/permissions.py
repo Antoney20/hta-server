@@ -7,7 +7,7 @@ class IsAdmin(permissions.BasePermission):
 
 class IsSecretariate(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.has_role(UserRole.SECRETARIATE)
+        return request.user and request.user.is_authenticated and request.user.has_role(UserRole.SECRETARIAT)
 
 class IsContentManager(permissions.BasePermission):
     def has_permission(self, request, view):

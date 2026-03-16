@@ -18,7 +18,8 @@ from dataclasses import asdict
 from rest_framework.views import APIView
 from app.services import criteria_info
 from app.services.public_view import PublicProposalService
-from users.models import InterventionProposal
+from app.services.weighting import WeightingReportService
+from users.models import InterventionProposal, UserRole
 from users.permissions import IsAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
 
@@ -92,9 +93,11 @@ class SystemCategoryViewSet(viewsets.ModelViewSet):
 
 
 class InterventionSystemCategoryViewSet(viewsets.ModelViewSet):
-    queryset = InterventionSystemCategory.objects.select_related("intervention", "system_category")
+    queryset = InterventionSystemCategory.objects.select_related(
+        "intervention", "system_category"
+    )
     serializer_class = InterventionSystemCategorySerializer
-    permission_classes = [permissions.IsAuthenticated, ~IsSWG]
+    permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -103,8 +106,20 @@ class InterventionSystemCategoryViewSet(viewsets.ModelViewSet):
             qs = qs.filter(intervention_id=intervention_id)
         return qs
 
+    def get_permissions(self):
+        if self.action == "destroy":
+            if (
+                self.request.user.is_authenticated
+                and (
+                    self.request.user.has_role(UserRole.ADMIN)
+                    or self.request.user.has_role(UserRole.SECRETARIAT)
+                )
+            ):
+                return [permissions.AllowAny()]  # already manually validated
+            return [permissions.IsAdminUser()]  # forces 403
 
-
+        # All other actions → authenticated users
+        return [permissions.IsAuthenticated()]
  
 class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet):
     queryset = CriteriaInformation.objects.none()
@@ -265,30 +280,24 @@ class InterventionScoreViewSet(viewsets.ModelViewSet):
 class ScoringReportView(APIView):
     """
     GET /v3/scoring-report/
-    Returns a full structured scoring report across all interventions.
-
-    Optional query params:
-      ?intervention=<uuid>,<uuid>   — filter to specific interventions
+    Optional: ?intervention=<uuid>,<uuid>
     """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        intervention_ids = None
-        raw = request.query_params.get("intervention")
-        if raw:
-            intervention_ids = [i.strip() for i in raw.split(",") if i.strip()]
+        raw = request.query_params.get("intervention", "")
+        intervention_ids = [i.strip() for i in raw.split(",") if i.strip()] or None
 
-        result = ScoringReportService.generate(intervention_ids=intervention_ids)
+        report = ScoringReportService.generate(intervention_ids=intervention_ids)
 
-        if not result.success:
+        if not report.success:
             return Response(
-                {"success": False, "message": result.message, "error": result.error},
+                {"success": False, "message": report.message, "error": report.error},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        return Response(asdict(result), status=status.HTTP_200_OK)
-    
-    
+        return Response(asdict(report), status=status.HTTP_200_OK)
+
 
 
 class AdminScoreViewSet(viewsets.ModelViewSet):
@@ -313,6 +322,27 @@ class AdminScoreViewSet(viewsets.ModelViewSet):
         return qs
     
     
+
+
+class WeightingReportView(APIView):
+    # permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        raw = request.query_params.get("intervention", "")
+        intervention_ids = [i.strip() for i in raw.split(",") if i.strip()] or None
+
+        report = WeightingReportService.generate(intervention_ids=intervention_ids)
+
+        if not report.success:
+            return Response(
+                {"success": False, "message": report.message, "error": report.error},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(asdict(report), status=status.HTTP_200_OK)    
+
+
+
 # new public proposals viewset, should allow anyone to see  for now.
 class PublicProposalViewSet(ViewSet):
     permission_classes = [AllowAny]
@@ -324,3 +354,6 @@ class PublicProposalViewSet(ViewSet):
 #matching
 # - 20 first chars
 # - remove special chars numbers only remain with chars (efficient regex)
+
+
+

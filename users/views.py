@@ -24,7 +24,7 @@ from django.core.exceptions import ValidationError
 from rest_framework import viewsets, status, generics
 from rest_framework.response import Response
 from rest_framework.views import APIView
-from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.permissions import AllowAny, IsAdminUser, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import login
 from django.utils.decorators import method_decorator
@@ -39,8 +39,8 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 
 
-from users.permissions import IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
-from users.serializers import ContactSubmissionSerializer, FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, NewsletterSubscriptionSerializer, NewsletterUnsubscribeSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer, VerifyUserSerializer
+from users.permissions import IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, IsSecretariatOrAdmin
+from users.serializers import ContactSubmissionSerializer, FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberAdminSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, NewsletterSubscriptionSerializer, NewsletterUnsubscribeSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer, VerifyUserSerializer
 from .models import FAQ, ContactSubmission, CustomUser, Governance, InterventionProposal, MediaResource, Member, News, NewsletterSubscription, ProposalSubmission, TemporaryFile, ProposalSubmissionStatus, ProposalDocument, UserStatus
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
@@ -1061,8 +1061,17 @@ class MemberListAPIView(generics.ListAPIView):
         return queryset.filter(user__isnull=False)
     
     
-    
+class MemberAdminAPIView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Member.objects.select_related('user').all()
+    permission_classes = [IsSecretariatOrAdmin]
+    http_method_names = ["get", "patch", "delete"]
 
+    def get_serializer_class(self):
+        if self.request.method in ('PATCH', 'PUT'):
+            return MemberAdminSerializer
+        return MemberListSerializer
+    
+    
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_dashboard_data(request):

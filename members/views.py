@@ -1169,7 +1169,7 @@ class FeedbackViewPermission:
             return request.user and request.user.is_authenticated
         if view.action in ['update', 'partial_update', 'destroy', 'respond', 'update_status']:
             return request.user and request.user.is_authenticated and (
-                request.user.has_role(UserRole.ADMIN) or request.user.has_role(UserRole.SECRETARIATE)
+                request.user.has_role(UserRole.ADMIN) or request.user.has_role(UserRole.SECRETARIAT)
             )
 
         return False

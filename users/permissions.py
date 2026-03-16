@@ -1,5 +1,6 @@
 from rest_framework import permissions
 from users.models import UserRole
+from rest_framework.permissions import BasePermission
 
 class IsAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -7,7 +8,7 @@ class IsAdmin(permissions.BasePermission):
 
 class IsSecretariate(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user and request.user.is_authenticated and request.user.has_role(UserRole.SECRETARIATE)
+        return request.user and request.user.is_authenticated and request.user.has_role(UserRole.SECRETARIAT)
 
 class IsContentManager(permissions.BasePermission):
     def has_permission(self, request, view):
@@ -83,3 +84,12 @@ class IsAuthenticatedOrReadOnly(permissions.BasePermission):
         if request.method in permissions.SAFE_METHODS:
             return True
         return request.user and request.user.is_authenticated
+
+
+
+class IsSecretariatOrAdmin(BasePermission):
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated
+            and request.user.role in ("secretariat", "admin")
+        )
