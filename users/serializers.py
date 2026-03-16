@@ -1,6 +1,6 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
-from .models import   FAQ, ContactSubmission, CustomUser, Governance, MediaResource, Member , InterventionProposal, News, NewsletterSubscription, ProposalDocument, ProposalSubmission, TemporaryFile
+from .models import   FAQ, ContactSubmission, CustomUser, Governance, MediaResource, Member , InterventionProposal, News, NewsletterSubscription, ProposalDocument, ProposalSubmission, TemporaryFile, UserRole
 from django.db.models import Q
 import logging
 User = get_user_model()
@@ -482,6 +482,7 @@ class MemberListSerializer(serializers.ModelSerializer):
     last_login = serializers.DateTimeField(source='user.last_login', read_only=True)
     created_at = serializers.DateTimeField(source='user.date_joined', read_only=True)
     profile_image = serializers.ImageField(source='user.profile_image', read_only=True)
+    role = serializers.CharField(source='user.role', read_only=True) 
     
     # Member fields
     phone_number = serializers.CharField(read_only=True)
@@ -503,6 +504,7 @@ class MemberListSerializer(serializers.ModelSerializer):
             'phone_number',
             'notes',
             'organization',
+            'role',  
         ]
 
 
@@ -531,6 +533,34 @@ class MemberListSerializer(serializers.ModelSerializer):
 
         return representation
 
+
+class MemberAdminSerializer(serializers.ModelSerializer):
+    role = serializers.ChoiceField(choices=UserRole.CHOICES, source='user.role')
+    phone_number = serializers.CharField(required=False, allow_blank=True)
+    notes = serializers.CharField(required=False, allow_blank=True)
+    organization = serializers.CharField(required=False)
+
+    class Meta:
+        model = Member
+        fields = ['phone_number', 'notes', 'organization', 'role']
+
+    def update(self, instance, validated_data):
+        # Pop nested user data
+        user_data = validated_data.pop('user', {})
+
+        # Update Member fields
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        instance.save()
+
+        # Update User fields
+        if user_data:
+            user = instance.user
+            for attr, value in user_data.items():
+                setattr(user, attr, value)
+            user.save()
+
+        return instance
 
 
 class FAQSerializer(serializers.ModelSerializer):

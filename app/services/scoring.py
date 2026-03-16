@@ -1,7 +1,10 @@
-from django.contrib.auth import get_user_model
+from __future__ import annotations
+
 from dataclasses import dataclass, field
 from typing import Optional
 import logging
+
+from django.contrib.auth import get_user_model
 
 from users.models import InterventionProposal
 from app.models import InterventionScore, SelectionTool
@@ -10,232 +13,218 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
+# ── Data shapes ───────────────────────────────────────────────────────────────
 
 @dataclass
-class UserScoringStatus:
+class CriteriaScore:
+    criteria_name: str
+    score_value: int            # 0 if not scored
+
+
+@dataclass
+class ReviewerStatus:
     user_id: int
     full_name: str
     email: str
     scored: bool
-    score_count: int        # number of criteria this reviewer scored
-    user_total_score: int   # sum of this reviewer's score_values for this intervention
+    score_count: int
+    total_score: int
+    criteria_scores: list[CriteriaScore] = field(default_factory=list)
 
 
 @dataclass
-class InterventionScoreReport:
+class InterventionReport:
     intervention_id: str
     reference_number: str
     intervention_name: str
     intervention_type: Optional[str]
-    system_categories: list[str]  
-    max_possible_score: int
-    criteria_scored: int    # unique criteria names scored (by any reviewer)
-    criteria_total: int     # total unique criteria available
-    is_fully_scored: bool   # all criteria have been scored by at least one reviewer
-    reviewer_statuses: list[UserScoringStatus] = field(default_factory=list)
-    overall_total_score: int = 0  # sum of ALL score_values across ALL reviewers
+    system_categories: list[str]
+    total_score: int
+    criteria_scored: int        # unique criteria scored by any reviewer
+    criteria_total: int         # total criteria available
+    reviewers: list[ReviewerStatus] = field(default_factory=list)
+    unscored_reviewers: list[ReviewerStatus] = field(default_factory=list)
 
 
 @dataclass
-class ScoringReportResult:
+class CategoryGroup:
+    category: str
+    interventions: list[InterventionReport] = field(default_factory=list)
+
+
+@dataclass
+class ScoringReport:
     success: bool
     message: str
     total_interventions: int = 0
-    fully_scored: int = 0
-    partially_scored: int = 0
     not_scored: int = 0
     total_reviewers: int = 0
-    interventions: list[InterventionScoreReport] = field(default_factory=list)
+    by_category: list[CategoryGroup] = field(default_factory=list)
     error: Optional[str] = None
 
 
-# ─── Service ──────────────────────────────────────────────────────────────────
+# ── Service ───────────────────────────────────────────────────────────────────
 
 class ScoringReportService:
     """
-    Generates structured scoring reports across all interventions.
+    Builds a scoring report grouped by system category.
 
-    Score structure per InterventionScore row:
-        score = {
-            "tool_id": "<uuid>",
-            "scoring_mechanism": "Effective",
-            "score_value": 3,
-            "criteria_label": "Clinical effectiveness, safety, and quality of the intervention."
-        }
+    Each InterventionReport contains:
+      - reviewers: all reviewers with per-criteria breakdown + totals
+      - unscored_reviewers: reviewers who haven't scored this intervention at all
 
-    Per intervention we return:
-        - Each reviewer's score_count + user_total_score
-        - overall_total_score = sum of all score_values from all reviewers
-        - criteria_scored = number of unique criteria names covered
+    Score JSON shape (InterventionScore.score):
+        {"tool_id": "...", "score_value": 3, "criteria_label": "Clinical effectiveness..."}
+
+    Criteria come from SelectionTool — these are the canonical scoring dimensions.
+    Each reviewer's criteria_scores list always contains ALL criteria (score_value=0 if not yet scored).
 
     Usage:
-        result = ScoringReportService.generate()
-        if result.success:
-            for item in result.interventions:
-                print(item.overall_total_score, item.reviewer_statuses)
+        report = ScoringReportService.generate()
     """
 
     @staticmethod
-    def generate(intervention_ids: list[str] = None) -> ScoringReportResult:
+    def generate(intervention_ids: list[str] | None = None) -> ScoringReport:
         try:
-            return ScoringReportService._build_report(intervention_ids)
+            return ScoringReportService._build(intervention_ids)
         except Exception as exc:
-            logger.exception("ScoringReportService failed")
-            return ScoringReportResult(
-                success=False,
-                message="Failed to generate scoring report.",
-                error=str(exc),
-            )
+            logger.exception("ScoringReportService.generate failed")
+            return ScoringReport(success=False, message="Report generation failed.", error=str(exc))
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_score_value(score_field) -> int:
-        """
-        Extract integer score_value from the score JSONField.
-        Handles: {"score_value": 3, ...} or plain int fallback.
-        """
-        if isinstance(score_field, dict):
-            return int(score_field.get("score_value", 0))
-        if isinstance(score_field, (int, float)):
-            return int(score_field)
-        return 0
+    def _score_value(score) -> int:
+        if isinstance(score, dict):
+            return int(score.get("score_value", 0))
+        return int(score) if isinstance(score, (int, float)) else 0
+
+    # ── Core ──────────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _extract_criteria_label(score_field) -> str:
-        """
-        Extract criteria_label string from the score JSONField.
-        e.g. "Clinical effectiveness, safety, and quality of the intervention."
-        """
-        if isinstance(score_field, dict):
-            return score_field.get("criteria_label", "").strip()
-        return ""
-
-    @staticmethod
-    def _build_report(intervention_ids: list[str] = None) -> ScoringReportResult:
-
-        qs = InterventionProposal.objects.all()
+    def _build(intervention_ids: list[str] | None) -> ScoringReport:
+        # 1. Interventions
+        qs = (
+            InterventionProposal.objects
+            .prefetch_related("system_categories__system_category")
+            .order_by("reference_number")
+        )
         if intervention_ids:
             qs = qs.filter(id__in=intervention_ids)
-        interventions = list(qs.order_by("reference_number"))
+        interventions = list(qs)
 
-        reviewer_ids = (
-            InterventionScore.objects
-            .values_list("reviewer_id", flat=True)
+        # 2. Unique criteria names — SelectionTool rows are scoring OPTIONS (e.g. Effective=3, Moderate=2)
+        #    grouped under the same criteria name. We want one entry per unique name.
+        all_criteria_names: list[str] = list(
+            SelectionTool.objects
+            .values_list("criteria", flat=True)
             .distinct()
+            .order_by("criteria")
         )
+        criteria_total = len(all_criteria_names)
+
+        # 3. Reviewers — anyone who has ever scored
+        reviewer_ids = InterventionScore.objects.values_list("reviewer_id", flat=True).distinct()
         reviewers = list(User.objects.filter(id__in=reviewer_ids))
 
-        # ── 3. Criteria — group SelectionTool rows by criteria name ───────────
-        #    Each row = one scoring option (e.g. "Effective = 3")
-        #    Unique criteria = unique `criteria` names
-        #    Max per criteria = highest `scores` value in that group
-        all_options = list(SelectionTool.objects.all().order_by("criteria", "-scores"))
-
-        max_per_criteria_name: dict[str, int] = {}
-        for opt in all_options:
-            name = opt.criteria.strip()
-            val = opt.scores if isinstance(opt.scores, int) else 0
-            if name not in max_per_criteria_name or val > max_per_criteria_name[name]:
-                max_per_criteria_name[name] = val
-
-        criteria_count = len(max_per_criteria_name)           # e.g. 2
-        max_possible = sum(max_per_criteria_name.values())    # e.g. 3 + 3 = 6
-
-        # ── 4. All scores — single query ──────────────────────────────────────
+        # 4. All scores — indexed by (intervention_id, reviewer_id, criteria_name)
+        #    InterventionScore.criteria FK → SelectionTool, which has a .criteria name field
         all_scores = list(
             InterventionScore.objects
-            .select_related("reviewer")
+            .select_related("reviewer", "criteria")
             .filter(intervention__in=interventions)
         )
-
-        # Index: { intervention_id → [InterventionScore, ...] }
-        scores_by_intervention: dict[str, list] = {}
+        # { intervention_id: { reviewer_id: { criteria_name: score_value } } }
+        score_index: dict[str, dict[int, dict[str, int]]] = {}
         for s in all_scores:
-            key = str(s.intervention_id)
-            scores_by_intervention.setdefault(key, []).append(s)
+            iid = str(s.intervention_id)
+            criteria_name = s.criteria.criteria.strip()
+            score_index \
+                .setdefault(iid, {}) \
+                .setdefault(s.reviewer_id, {})[criteria_name] = ScoringReportService._score_value(s.score)
 
-        # ── 5. Build per-intervention report ──────────────────────────────────
-        reports: list[InterventionScoreReport] = []
-        fully_scored_count = 0
-        partially_scored_count = 0
-        not_scored_count = 0
+        # 5. Build per-intervention reports
+        not_scored = 0
+        reports: list[InterventionReport] = []
 
-        for intervention in interventions:
-            iid = str(intervention.id)
-            scores = scores_by_intervention.get(iid, [])
-            
-            system_categories = [
-                sc.system_category.name          # adjust field name if needed
-                for sc in intervention.system_categories.all()
-            ]
+        for iv in interventions:
+            iid = str(iv.id)
+            iv_scores = score_index.get(iid, {})  # { reviewer_id: { criteria_id: value } }
 
+            reviewer_statuses: list[ReviewerStatus] = []
+            unscored: list[ReviewerStatus] = []
+            total_score = 0
+            all_criteria_ids_scored: set[str] = set()
 
-            # ── Per-reviewer breakdown ────────────────────────────────────────
-            scores_by_reviewer: dict[int, list] = {}
-            for s in scores:
-                scores_by_reviewer.setdefault(s.reviewer_id, []).append(s)
+            for r in reviewers:
+                r_criteria_map = iv_scores.get(r.id, {})   # { criteria_id: value }
 
-            reviewer_statuses: list[UserScoringStatus] = []
-            overall_total_score = 0
+                # One entry per unique criteria name — score_value 0 if not scored
+                criteria_scores = [
+                    CriteriaScore(
+                        criteria_name=name,
+                        score_value=r_criteria_map.get(name, 0),
+                    )
+                    for name in all_criteria_names
+                ]
 
-            for reviewer in reviewers:
-                reviewer_scores = scores_by_reviewer.get(reviewer.id, [])
-                user_total = sum(
-                    ScoringReportService._extract_score_value(s.score)
-                    for s in reviewer_scores
+                r_total = sum(cs.score_value for cs in criteria_scores)
+                total_score += r_total
+                all_criteria_ids_scored.update(r_criteria_map.keys())
+
+                status = ReviewerStatus(
+                    user_id=r.id,
+                    full_name= r.username,
+                    email=r.email,
+                    scored=bool(r_criteria_map),
+                    score_count=len(r_criteria_map),
+                    total_score=r_total,
+                    criteria_scores=criteria_scores,
                 )
-                overall_total_score += user_total
+                reviewer_statuses.append(status)
+                if not r_criteria_map:
+                    unscored.append(status)
 
-                reviewer_statuses.append(UserScoringStatus(
-                    user_id=reviewer.id,
-                    full_name= reviewer.username,
-                    email=reviewer.email,
-                    scored=len(reviewer_scores) > 0,
-                    score_count=len(reviewer_scores),
-                    user_total_score=user_total,
-                ))
+            if not iv_scores:
+                not_scored += 1
 
-            # ── Unique criteria names covered (by any reviewer) ───────────────
-            # Read criteria_label directly from the score JSON — no id lookup needed
-            criteria_names_scored = {
-                ScoringReportService._extract_criteria_label(s.score)
-                for s in scores
-                if ScoringReportService._extract_criteria_label(s.score)
-            }
-            criteria_scored = len(criteria_names_scored)
-            is_fully_scored = criteria_scored >= criteria_count and criteria_count > 0
-
-            report = InterventionScoreReport(
+            reports.append(InterventionReport(
                 intervention_id=iid,
-                reference_number=getattr(intervention, "reference_number", iid),
-                intervention_name=getattr(intervention, "intervention_name", str(intervention)),
-                intervention_type=getattr(intervention, "intervention_type", None),
-                system_categories=system_categories,
-                max_possible_score=max_possible,
-                criteria_scored=criteria_scored,
-                criteria_total=criteria_count,
-                is_fully_scored=is_fully_scored,
-                reviewer_statuses=reviewer_statuses,
-                overall_total_score=overall_total_score,
-            )
-            reports.append(report)
+                reference_number=getattr(iv, "reference_number", iid),
+                intervention_name=getattr(iv, "intervention_name", str(iv)),
+                intervention_type=getattr(iv, "intervention_type", None),
+                system_categories=[
+                    sc.system_category.name for sc in iv.system_categories.all()
+                ],
+                total_score=total_score,
+                criteria_scored=len(all_criteria_ids_scored),
+                criteria_total=criteria_total,
+                reviewers=reviewer_statuses,
+                unscored_reviewers=unscored,
+            ))
 
-            if not scores:
-                not_scored_count += 1
-            elif is_fully_scored:
-                fully_scored_count += 1
+        # 6. Group by system category
+        category_map: dict[str, list[InterventionReport]] = {}
+        for ir in reports:
+            if ir.system_categories:
+                for cat in ir.system_categories:
+                    category_map.setdefault(cat, []).append(ir)
             else:
-                partially_scored_count += 1
+                category_map.setdefault("Uncategorized", []).append(ir)
 
-        # Sort: fully scored first → partial → none; descending score within each group
-        reports.sort(key=lambda r: (-int(r.is_fully_scored), -r.overall_total_score))
+        by_category = [
+            CategoryGroup(
+                category=cat,
+                interventions=sorted(ivs, key=lambda x: -x.total_score),
+            )
+            for cat, ivs in sorted(category_map.items())
+        ]
 
-        return ScoringReportResult(
+        return ScoringReport(
             success=True,
             message="Report generated successfully.",
-            total_interventions=len(reports),
-            fully_scored=fully_scored_count,
-            partially_scored=partially_scored_count,
-            not_scored=not_scored_count,
+            total_interventions=len(interventions),
+            not_scored=not_scored,
             total_reviewers=len(reviewers),
-            interventions=reports,
+            by_category=by_category,
         )
