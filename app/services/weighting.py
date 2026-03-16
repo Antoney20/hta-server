@@ -1,136 +1,10 @@
-# from __future__ import annotations
-
-# from dataclasses import dataclass, field
-# from typing import Optional
-# import logging
-
-# from django.contrib.auth import get_user_model
-# from users.models import InterventionProposal
-# from app.models import InterventionScore, SelectionTool
-
-# User = get_user_model()
-# logger = logging.getLogger(__name__)
-
-
-# # ── Shapes ────────────────────────────────────────────────────────────────────
-
-# @dataclass
-# class CriteriaWeight:
-#     criteria_name: str
-#     total_score: int
-#     reviewer_count: int
-
-
-# @dataclass
-# class CriteriaAnchor:
-#     criteria_name: str
-#     worst_value: int
-#     best_value: int
-
-
-# @dataclass
-# class InterventionWeight:
-#     intervention_id: str
-#     reference_number: str
-#     intervention_name: str
-#     criteria: list[CriteriaWeight] = field(default_factory=list)
-
-
-# @dataclass
-# class WeightingReport:
-#     success: bool
-#     message: str
-#     anchors: list[CriteriaAnchor] = field(default_factory=list)
-#     interventions: list[InterventionWeight] = field(default_factory=list)
-#     error: Optional[str] = None
-
-
-# # ── Data loading ──────────────────────────────────────────────────────────────
-
-# def _load_score_index(interventions) -> dict[str, dict[str, list[int]]]:
-#     """{ intervention_id: { criteria_name: [score_values] } }"""
-#     index: dict[str, dict[str, list[int]]] = {}
-#     scores = (
-#         InterventionScore.objects
-#         .select_related("criteria")
-#         .filter(intervention__in=interventions)
-#     )
-#     for s in scores:
-#         value = int(s.score.get("score_value", 0) if isinstance(s.score, dict) else s.score or 0)
-#         if value:
-#             index.setdefault(str(s.intervention_id), {}).setdefault(s.criteria.criteria.strip(), []).append(value)
-#     return index
-
-
-# # ── Service ───────────────────────────────────────────────────────────────────
-
-# class WeightingReportService:
-
-#     @staticmethod
-#     def generate(intervention_ids: list[str] | None = None) -> WeightingReport:
-#         try:
-#             qs = InterventionProposal.objects.order_by("reference_number")
-#             if intervention_ids:
-#                 qs = qs.filter(id__in=intervention_ids)
-#             interventions = list(qs)
-
-#             criteria_names = list(
-#                 SelectionTool.objects
-#                 .values_list("criteria", flat=True)
-#                 .distinct()
-#                 .order_by("criteria")
-#             )
-#             score_index = _load_score_index(interventions)
-
-#             # Build per-intervention results
-#             results: list[InterventionWeight] = []
-#             for iv in interventions:
-#                 iv_scores = score_index.get(str(iv.id), {})
-#                 results.append(InterventionWeight(
-#                     intervention_id=str(iv.id),
-#                     reference_number=getattr(iv, "reference_number", str(iv.id)),
-#                     intervention_name=getattr(iv, "intervention_name", str(iv)),
-#                     criteria=[
-#                         CriteriaWeight(
-#                             criteria_name=name,
-#                             total_score=sum(iv_scores.get(name, [])),
-#                             reviewer_count=len(iv_scores.get(name, [])),
-#                         )
-#                         for name in criteria_names
-#                     ],
-#                 ))
-
-#             # Derive worst/best per criteria across all interventions
-
-#             anchors = [
-#                 CriteriaAnchor(
-#                     criteria_name=name,
-#                     worst_value=min(
-#                         (cw.total_score for iv in results for cw in iv.criteria
-#                         if cw.criteria_name == name and cw.reviewer_count > 0),
-#                         default=0,
-#                     ),
-#                     best_value=max(
-#                         (cw.total_score for iv in results for cw in iv.criteria
-#                         if cw.criteria_name == name and cw.reviewer_count > 0),
-#                         default=0,
-#                     ),
-#                 )
-#                 for name in criteria_names
-#             ]
-
-#             return WeightingReport(success=True, message="OK", anchors=anchors, interventions=results)
-
-#         except Exception as exc:
-#             logger.exception("WeightingReportService.generate failed")
-#             return WeightingReport(success=False, message="Failed.", error=str(exc))
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Optional
 import logging
 import math
+import numpy as np
 
 from django.contrib.auth import get_user_model
 from users.models import InterventionProposal
@@ -139,8 +13,6 @@ from app.models import InterventionScore, SelectionTool
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-
-# ── Shapes ────────────────────────────────────────────────────────────────────
 
 @dataclass
 class CriteriaWeight:
@@ -261,7 +133,7 @@ def _build_std_devs(
     normalisation_report: list[InterventionNormalised],
     criteria_names: list[str],
 ) -> list[CriteriaStdDev]:
-    """Population SD (sigma) per criteria across all scored interventions — matches spreadsheet."""
+    """Population SD (sigma) per criteria across all scored interventions."""
     std_devs = []
     for name in criteria_names:
         values = [
@@ -269,13 +141,8 @@ def _build_std_devs(
             for ns in iv.normalised
             if ns.criteria_name == name and ns.normalised_value is not None
         ]
-        n = len(values)
-        if n < 2:
-            std_devs.append(CriteriaStdDev(criteria_name=name, std_dev=0.0))
-            continue
-        mean = sum(values) / n
-        variance = sum((v - mean) ** 2 for v in values) / n      # population SD (sigma)
-        std_devs.append(CriteriaStdDev(criteria_name=name, std_dev=round(math.sqrt(variance), 9)))
+        std_dev = round(float(np.std(values)), 9) if len(values) >= 2 else 0.0
+        std_devs.append(CriteriaStdDev(criteria_name=name, std_dev=std_dev))
     return std_devs
 
 

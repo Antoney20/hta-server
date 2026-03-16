@@ -16,3 +16,4 @@ redis
 requests
 user-agents
 django-crontab
+numpy
