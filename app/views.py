@@ -76,17 +76,35 @@ def search_interventions(request):
     cache.set(cache_key, data, 60 * 2)  # 2 min cache
     return Response({"success": True, "message": "Success", "data": data})
 
+
+class AdminOrSecretariatDestroyMixin:
+    def get_permissions(self):
+        if self.action == "destroy":
+            if (
+                self.request.user.is_authenticated
+                and (
+                    self.request.user.has_role(UserRole.ADMIN)
+                    or self.request.user.has_role(UserRole.SECRETARIAT)
+                )
+            ):
+                return [permissions.AllowAny()]  # already manually validated
+            return [permissions.IsAdminUser()]  # forces 403
+
+        return [permissions.IsAuthenticated()]
+
+
+
 class SelectionToolViewSet(viewsets.ModelViewSet):
     queryset = SelectionTool.objects.all()
     serializer_class = SelectionToolSerializer
     # access to everyone except SWGs
-    permission_classes = [permissions.IsAuthenticated, ~IsSWG]
+    permission_classes = [permissions.IsAuthenticated]
 
 
 class SystemCategoryViewSet(viewsets.ModelViewSet):
     queryset = SystemCategory.objects.all()
     serializer_class = SystemCategorySerializer
-    permission_classes = [permissions.IsAuthenticated, ~IsSWG]
+    permission_classes = [permissions.IsAuthenticated, ]
 
 
 
