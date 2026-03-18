@@ -104,13 +104,28 @@ class CriteriaInformationCreateSerializer(serializers.ModelSerializer):
         ]
 
 
+# class InterventionScoreCreateSerializer(serializers.ModelSerializer):
+#     """Used for POST/PATCH — minimal fields, reviewer injected from request."""
+#     class Meta:
+#         model = InterventionScore
+#         fields = ["id", "intervention", "criteria", "score", "comment"]
+#         read_only_fields = ["id"]
+
+
 class InterventionScoreCreateSerializer(serializers.ModelSerializer):
-    """Used for POST/PATCH — minimal fields, reviewer injected from request."""
     class Meta:
         model = InterventionScore
         fields = ["id", "intervention", "criteria", "score", "comment"]
         read_only_fields = ["id"]
 
+    def validate(self, attrs):
+        comment = (attrs.get("comment") or "").strip()
+        score = attrs.get("score")
+        if comment and not score:
+            raise serializers.ValidationError({
+                "score": "A score must be selected when a comment is provided."
+            })
+        return attrs
 
 class InterventionScoreSerializer(serializers.ModelSerializer):
     """Used for GET — enriched with reviewer + intervention details."""

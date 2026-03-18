@@ -128,6 +128,9 @@ class InterventionScore(models.Model):
     
     class Meta:
         unique_together = ("reviewer", "intervention", "criteria")
+        
+    def __str__(self):
+        return f"{self.reviewer} — {self.intervention} — {self.criteria}"
     
     
 

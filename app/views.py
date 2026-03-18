@@ -1,3 +1,4 @@
+from django.db import transaction
 from rest_framework import viewsets, permissions
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.viewsets import ViewSet
@@ -9,6 +10,8 @@ from rest_framework.decorators import action
 from rest_framework.decorators import api_view, permission_classes
 
 from rest_framework.permissions import IsAuthenticated
+from rest_framework.exceptions import PermissionDenied, ValidationError
+
 
 from django.db.models import Q
 from django.core.cache import cache
@@ -264,6 +267,47 @@ class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericView
         )
  
     
+# class InterventionScoreViewSet(viewsets.ModelViewSet):
+#     permission_classes = [permissions.IsAuthenticated]
+
+#     def get_queryset(self):
+#         qs = InterventionScore.objects.select_related(
+#             "reviewer", "intervention", "criteria"
+#         ).filter(reviewer=self.request.user)
+
+#         intervention_id = self.request.query_params.get("intervention")
+#         if intervention_id:
+#             qs = qs.filter(intervention_id=intervention_id)
+#         return qs
+
+#     def get_serializer_class(self):
+#         if self.action in ("create", "update", "partial_update"):
+#             return InterventionScoreCreateSerializer
+#         return InterventionScoreSerializer
+
+#     def perform_create(self, serializer):
+#         serializer.save(reviewer=self.request.user)
+        
+#     # One new action on the existing viewset — no new viewset, no new URL pattern
+#     @action(detail=False, methods=["post"], url_path="bulk")
+#     def bulk_create(self, request):
+#         with transaction.atomic():
+#             created = []
+#             for item in request.data.get("scores", []):
+#                 s = InterventionScoreCreateSerializer(data=item)
+#                 s.is_valid(raise_exception=True)  # rolls back everything if any fail
+#                 created.append(s.save(reviewer=request.user))
+#         return Response(
+#             InterventionScoreSerializer(created, many=True).data,
+#             status=status.HTTP_201_CREATED,
+#         )
+
+#     def perform_update(self, serializer):
+#         if serializer.instance.reviewer != self.request.user:
+#             raise PermissionDenied("You can only edit your own scores.")
+#         serializer.save()
+
+
 class InterventionScoreViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
 
@@ -271,7 +315,6 @@ class InterventionScoreViewSet(viewsets.ModelViewSet):
         qs = InterventionScore.objects.select_related(
             "reviewer", "intervention", "criteria"
         ).filter(reviewer=self.request.user)
-
         intervention_id = self.request.query_params.get("intervention")
         if intervention_id:
             qs = qs.filter(intervention_id=intervention_id)
@@ -290,8 +333,51 @@ class InterventionScoreViewSet(viewsets.ModelViewSet):
             raise PermissionDenied("You can only edit your own scores.")
         serializer.save()
 
+    @action(detail=False, methods=["post"], url_path="bulk")
+    def bulk_create(self, request):
+        items = request.data.get("scores", [])
 
+        if not items:
+            raise ValidationError({"detail": "No scores provided."})
 
+        errors = []
+
+        try:
+            with transaction.atomic():
+                created = []
+                for i, item in enumerate(items):
+                    s = InterventionScoreCreateSerializer(data=item)
+                    if not s.is_valid():
+                        # Collect all item errors before raising so the
+                        # response tells the client exactly what went wrong
+                        errors.append({
+                            "index": i,
+                            "criteria": item.get("criteria"),
+                            "errors": s.errors,
+                        })
+                    else:
+                        created.append(s.save(reviewer=request.user))
+
+                if errors:
+                    # Raising inside atomic() rolls everything back
+                    raise ValidationError({
+                        "detail": "Validation failed — no scores were saved.",
+                        "errors": errors,
+                    })
+
+        except ValidationError:
+            raise  # already structured, let DRF handle the 400
+
+        except Exception as exc:
+            raise ValidationError({
+                "detail": "An unexpected error occurred — no scores were saved.",
+                "error": str(exc),
+            })
+
+        return Response(
+            InterventionScoreSerializer(created, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
 
         
         
