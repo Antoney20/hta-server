@@ -335,6 +335,7 @@ class InterventionProposal(models.Model):
     submitted_at = models.DateTimeField(auto_now_add=True, db_index=True)
     user = models.ForeignKey('users.CustomUser', on_delete=models.SET_NULL, null=True, blank=True, db_index=True)
     is_public = models.BooleanField(default=False, db_index=True)
+    rescore_open = models.BooleanField(default=False)
 
     reference_number = models.CharField(
         max_length=50,

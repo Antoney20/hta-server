@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdminScoreViewSet,
     CriteriaInformationViewSet,
+    InterventionProposalViewSet,
     PublicProposalViewSet,
     ScoringReportView,
     SelectionToolViewSet,
@@ -21,6 +22,7 @@ router.register(r"criteria-information", CriteriaInformationViewSet, basename="c
 router.register("intervention-scores", InterventionScoreViewSet, basename="intervention-score")
 router.register(r"admin-report", AdminScoreViewSet, basename="admin-report")
 router.register(r"proposals",  PublicProposalViewSet, basename="public-proposals")
+router.register(r"re-open", InterventionProposalViewSet, basename="scoring-reopen")
 
 
 

@@ -25,6 +25,7 @@ from app.services.weighting import WeightingReportService
 from users.models import InterventionProposal, UserRole
 from users.permissions import IsAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
+from users.serializers import InterventionProposalSerializer
 
 from .models import CriteriaInformation, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
@@ -79,6 +80,11 @@ def search_interventions(request):
     cache.set(cache_key, data, 60 * 2)  # 2 min cache
     return Response({"success": True, "message": "Success", "data": data})
 
+
+def _can_manage_rescore(user) -> bool:
+    """Only admin / SWG / secretariat can open or close a rescore window."""
+    return user.role in (UserRole.ADMIN, UserRole.SWG, UserRole.SECRETARIAT)
+ 
 
 class AdminOrSecretariatDestroyMixin:
     def get_permissions(self):
@@ -265,8 +271,61 @@ class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericView
             {"success": True, "message": "Criteria deleted.", "data": None},
             status=status.HTTP_200_OK,
         )
- 
-    
+
+class InterventionProposalViewSet(viewsets.ModelViewSet):
+    queryset = InterventionProposal.objects.select_related("user").order_by("-submitted_at")
+    serializer_class = InterventionProposalSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+
+        # ?rescore_open=true  →  only interventions with open rescore window
+        rescore_open = self.request.query_params.get("rescore_open")
+        if rescore_open is not None:
+            qs = qs.filter(rescore_open=rescore_open.lower() == "true")
+
+        return qs
+
+    # ------------------------------------------------------------------
+    # Rescore window management
+    # ------------------------------------------------------------------
+
+    @action(detail=True, methods=["post"], url_path="open-rescore")
+    def open_rescore(self, request, pk=None):
+        if not _can_manage_rescore(request.user):
+            raise PermissionDenied("Only admins, SWG, or secretariat can open rescoring.")
+
+        intervention = self.get_object()
+
+        if intervention.rescore_open:
+            return Response(
+                {"detail": "Rescore window is already open."},
+                status=status.HTTP_200_OK,
+            )
+
+        intervention.rescore_open = True
+        intervention.save(update_fields=["rescore_open"])
+        return Response({"detail": "Rescore window opened."}, status=status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"], url_path="close-rescore")
+    def close_rescore(self, request, pk=None):
+        if not _can_manage_rescore(request.user):
+            raise PermissionDenied("Only admins, SWG, or secretariat can close rescoring.")
+
+        intervention = self.get_object()
+
+        if not intervention.rescore_open:
+            return Response(
+                {"detail": "Rescore window is already closed."},
+                status=status.HTTP_200_OK,
+            )
+
+        intervention.rescore_open = False
+        intervention.save(update_fields=["rescore_open"])
+        return Response({"detail": "Rescore window closed."}, status=status.HTTP_200_OK)
+
+
 # class InterventionScoreViewSet(viewsets.ModelViewSet):
 #     permission_classes = [permissions.IsAuthenticated]
 
@@ -274,7 +333,6 @@ class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericView
 #         qs = InterventionScore.objects.select_related(
 #             "reviewer", "intervention", "criteria"
 #         ).filter(reviewer=self.request.user)
-
 #         intervention_id = self.request.query_params.get("intervention")
 #         if intervention_id:
 #             qs = qs.filter(intervention_id=intervention_id)
@@ -287,100 +345,267 @@ class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericView
 
 #     def perform_create(self, serializer):
 #         serializer.save(reviewer=self.request.user)
-        
-#     # One new action on the existing viewset — no new viewset, no new URL pattern
-#     @action(detail=False, methods=["post"], url_path="bulk")
-#     def bulk_create(self, request):
-#         with transaction.atomic():
-#             created = []
-#             for item in request.data.get("scores", []):
-#                 s = InterventionScoreCreateSerializer(data=item)
-#                 s.is_valid(raise_exception=True)  # rolls back everything if any fail
-#                 created.append(s.save(reviewer=request.user))
-#         return Response(
-#             InterventionScoreSerializer(created, many=True).data,
-#             status=status.HTTP_201_CREATED,
-#         )
 
 #     def perform_update(self, serializer):
 #         if serializer.instance.reviewer != self.request.user:
 #             raise PermissionDenied("You can only edit your own scores.")
 #         serializer.save()
 
+#     @action(detail=False, methods=["post"], url_path="bulk")
+#     def bulk_create(self, request):
+#         items = request.data.get("scores", [])
+
+#         if not items:
+#             raise ValidationError({"detail": "No scores provided."})
+
+#         errors = []
+
+#         try:
+#             with transaction.atomic():
+#                 created = []
+#                 for i, item in enumerate(items):
+#                     s = InterventionScoreCreateSerializer(data=item)
+#                     if not s.is_valid():
+#                         # Collect all item errors before raising so the
+#                         # response tells the client exactly what went wrong
+#                         errors.append({
+#                             "index": i,
+#                             "criteria": item.get("criteria"),
+#                             "errors": s.errors,
+#                         })
+#                     else:
+#                         created.append(s.save(reviewer=request.user))
+
+#                 if errors:
+#                     # Raising inside atomic() rolls everything back
+#                     raise ValidationError({
+#                         "detail": "Validation failed — no scores were saved.",
+#                         "errors": errors,
+#                     })
+
+#         except ValidationError:
+#             raise  # already structured, let DRF handle the 400
+
+#         except Exception as exc:
+#             raise ValidationError({
+#                 "detail": "An unexpected error occurred — no scores were saved.",
+#                 "error": str(exc),
+#             })
+
+#         return Response(
+#             InterventionScoreSerializer(created, many=True).data,
+#             status=status.HTTP_201_CREATED,
+#         )
+
+        
 
 class InterventionScoreViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
+    
+    def _assert_can_score(self, user) -> None:
+        """Only admin or SWG members may submit scores."""
+        if user.role not in (UserRole.ADMIN, UserRole.SWG):
+            raise PermissionDenied("Only SWG members and admins can submit scores.")
 
+
+    
     def get_queryset(self):
         qs = InterventionScore.objects.select_related(
-            "reviewer", "intervention", "criteria"
+            "reviewer", "intervention", "criteria", "rescored_by"
         ).filter(reviewer=self.request.user)
         intervention_id = self.request.query_params.get("intervention")
         if intervention_id:
             qs = qs.filter(intervention_id=intervention_id)
         return qs
-
+ 
     def get_serializer_class(self):
-        if self.action in ("create", "update", "partial_update"):
+        if self.action in ("create", "bulk_create", "rescore", "bulk_rescore"):
             return InterventionScoreCreateSerializer
         return InterventionScoreSerializer
-
+ 
+    # def perform_create(self, serializer):
+    #     serializer.save(reviewer=self.request.user)
+    
     def perform_create(self, serializer):
+        self._assert_can_score(self.request.user)
         serializer.save(reviewer=self.request.user)
 
+ 
     def perform_update(self, serializer):
-        if serializer.instance.reviewer != self.request.user:
-            raise PermissionDenied("You can only edit your own scores.")
-        serializer.save()
-
+        raise PermissionDenied(
+            "Scores cannot be edited directly. "
+            "Use the rescore endpoint once a rescore window is open."
+        )
+ 
+    # ------------------------------------------------------------------
+    # Bulk create  (unchanged)
+    # ------------------------------------------------------------------
+ 
     @action(detail=False, methods=["post"], url_path="bulk")
     def bulk_create(self, request):
         items = request.data.get("scores", [])
-
         if not items:
             raise ValidationError({"detail": "No scores provided."})
-
+ 
         errors = []
-
         try:
             with transaction.atomic():
                 created = []
                 for i, item in enumerate(items):
                     s = InterventionScoreCreateSerializer(data=item)
                     if not s.is_valid():
-                        # Collect all item errors before raising so the
-                        # response tells the client exactly what went wrong
-                        errors.append({
-                            "index": i,
-                            "criteria": item.get("criteria"),
-                            "errors": s.errors,
-                        })
+                        errors.append(
+                            {"index": i, "criteria": item.get("criteria"), "errors": s.errors}
+                        )
                     else:
                         created.append(s.save(reviewer=request.user))
-
+ 
                 if errors:
-                    # Raising inside atomic() rolls everything back
-                    raise ValidationError({
-                        "detail": "Validation failed — no scores were saved.",
-                        "errors": errors,
-                    })
-
+                    raise ValidationError(
+                        {"detail": "Validation failed — no scores were saved.", "errors": errors}
+                    )
         except ValidationError:
-            raise  # already structured, let DRF handle the 400
-
+            raise
         except Exception as exc:
-            raise ValidationError({
-                "detail": "An unexpected error occurred — no scores were saved.",
-                "error": str(exc),
-            })
-
+            raise ValidationError({"detail": "Unexpected error.", "error": str(exc)})
+ 
         return Response(
             InterventionScoreSerializer(created, many=True).data,
             status=status.HTTP_201_CREATED,
         )
+ 
+    # ------------------------------------------------------------------
+    # Single rescore   PATCH /intervention-scores/<id>/rescore/
+    # ------------------------------------------------------------------
+ 
+    @action(detail=True, methods=["patch"], url_path="rescore")
+    def rescore(self, request, pk=None):
+        """
+        Reviewer patches their own existing score — in-place, no new row.
+ 
+        Guards:
+          1. Caller must own the score (reviewer == request.user)
+          2. intervention.rescore_open must be True
+          3. is_rescored must be False  (max once)
+ 
+        PATCH /intervention-scores/<id>/rescore/
+        Payload: { "score": {...}, "comment": "..." }
+        """
+        instance = self.get_object()
+ 
+        if instance.reviewer != request.user:
+            raise PermissionDenied("You can only rescore your own scores.")
+ 
+        if not instance.intervention.rescore_open:
+            raise PermissionDenied(
+                "Rescoring is not open for this intervention. "
+                "Ask an admin, SWG, or secretariat member to open it."
+            )
+ 
+        if instance.is_rescored:
+            raise ValidationError(
+                {"detail": "This score has already been rescored and cannot be edited again."}
+            )
+ 
+        s = InterventionScoreCreateSerializer(instance, data=request.data, partial=True)
+        s.is_valid(raise_exception=True)
+        # Patch the existing row in-place; mark it as rescored
+        updated = s.save(is_rescored=True, rescored_by=request.user)
+ 
+        return Response(InterventionScoreSerializer(updated).data, status=status.HTTP_200_OK)
+ 
+    # ------------------------------------------------------------------
+    # Bulk rescore   POST /intervention-scores/bulk-rescore/
+    # ------------------------------------------------------------------
 
+    @action(detail=False, methods=["patch"], url_path="bulk")
+    def bulk_update(self, request):
+        """
+        Bulk-patch existing scores.
+        When rescore_open is True this acts as the rescore endpoint.
+    
+        PATCH /v3/intervention-scores/bulk/
+        {
+            "intervention": "<uuid>",
+            "scores": [
+                {"id": "<score-uuid>", "score": {...}, "comment": "..."},
+                ...
+            ]
+        }
+        """
+        intervention_id = request.data.get("intervention")
+        items = request.data.get("scores", [])
+    
+        if not intervention_id:
+            raise ValidationError({"detail": "`intervention` is required."})
+        if not items:
+            raise ValidationError({"detail": "No scores provided."})
+    
+        # Rescore window must be open
+        try:
+            intervention = InterventionProposal.objects.get(pk=intervention_id)
+        except InterventionProposal.DoesNotExist:
+            raise ValidationError({"detail": "Intervention not found."})
+    
+        if not intervention.rescore_open:
+            raise PermissionDenied(
+                "Rescoring is not open for this intervention. "
+                "Ask an admin, SWG, or secretariat member to open it."
+            )
+    
+        errors = []
+        try:
+            with transaction.atomic():
+                updated = []
+                for i, item in enumerate(items):
+                    score_id = item.get("id")
+                    if not score_id:
+                        errors.append({"index": i, "errors": {"id": "Score `id` is required."}})
+                        continue
+    
+                    try:
+                        existing = InterventionScore.objects.get(
+                            pk=score_id,
+                            reviewer=request.user,
+                        )
+                    except InterventionScore.DoesNotExist:
+                        errors.append({
+                            "index": i,
+                            "id": score_id,
+                            "errors": {"id": "Score not found or does not belong to you."},
+                        })
+                        continue
+    
+                    if existing.is_rescored:
+                        errors.append({
+                            "index": i,
+                            "id": score_id,
+                            "errors": {"detail": "This score has already been rescored once."},
+                        })
+                        continue
+    
+                    s = InterventionScoreCreateSerializer(existing, data=item, partial=True)
+                    if not s.is_valid():
+                        errors.append({"index": i, "id": score_id, "errors": s.errors})
+                    else:
+                        updated.append(s.save(is_rescored=True, rescored_by=request.user))
+    
+                if errors:
+                    raise ValidationError(
+                        {"detail": "Validation failed — no scores were updated.", "errors": errors}
+                    )
+    
+        except ValidationError:
+            raise
+        except Exception as exc:
+            raise ValidationError({"detail": "Unexpected error.", "error": str(exc)})
+    
+        return Response(
+            InterventionScoreSerializer(updated, many=True).data,
+            status=status.HTTP_200_OK,
+        )
         
-        
+            
 class ScoringReportView(APIView):
     """
     GET /v3/scoring-report/

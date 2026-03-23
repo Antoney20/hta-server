@@ -416,10 +416,10 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
             'intervention_name', 'intervention_type', 'beneficiary',
             'justification', 'expected_impact', 'additional_info', 'reference_number',
             'signature', 'date', 'uploaded_documents', 'uploadedDocument', 'is_public',
-            'interventionName', 'interventionType',
+            'interventionName', 'interventionType', 'rescore_open',
             'documents'
         ]
-        read_only_fields = ['id', 'reference_number', 'documents']
+        read_only_fields = ['id', 'reference_number','rescore_open', 'documents']
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
