@@ -3,6 +3,7 @@ from rest_framework.routers import DefaultRouter
 from .views import (
     AdminScoreViewSet,
     CriteriaInformationViewSet,
+    DecisionTypeViewSet,
     InterventionProposalViewSet,
     PublicProposalViewSet,
     ScoringReportView,
@@ -10,6 +11,7 @@ from .views import (
     SystemCategoryViewSet,
     InterventionSystemCategoryViewSet,
     InterventionScoreViewSet,
+    TopicPriorityViewSet,
     WeightingReportView,
     search_interventions,
 )
@@ -23,6 +25,8 @@ router.register("intervention-scores", InterventionScoreViewSet, basename="inter
 router.register(r"admin-report", AdminScoreViewSet, basename="admin-report")
 router.register(r"proposals",  PublicProposalViewSet, basename="public-proposals")
 router.register(r"re-open", InterventionProposalViewSet, basename="scoring-reopen")
+router.register(r"topic-priority", TopicPriorityViewSet, basename="topic-priority")
+router.register(r"decision-types", DecisionTypeViewSet, basename="decision-type")
 
 
 

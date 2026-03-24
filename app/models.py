@@ -116,7 +116,7 @@ class CriteriaInformation(models.Model):
     def __str__(self):
         return f"Criteria Info — {self.intervention}"    
  
- 
+
 class InterventionScore(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     reviewer = models.ForeignKey(User, on_delete=models.CASCADE)
@@ -153,6 +153,82 @@ class InterventionScore(models.Model):
         return f"{self.reviewer} — {self.intervention} — {self.criteria}"
  
  
+ 
+class DecisionType(models.Model):
+    """
+    save decision type
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class InterventionStatusUpdate(models.Model):
+
+    STATUS_CHOICES = [
+        ("PENDING", "Pending"),
+        ("ON_REVIEW", "On Review"),
+        ("DECIDED", "Decided"),
+        ("CLOSED", "Closed"),
+        ("COMPLETE", "Complete")
+        
+    ]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    intervention = models.ForeignKey(
+        InterventionProposal,
+        on_delete=models.CASCADE,
+        related_name="status_updates",
+    )
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+    decision = models.ForeignKey(
+        DecisionType,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="status_updates",
+        help_text="Formal HTA decision once reached.",
+    )
+    decision_date = models.DateField(null=True, blank=True)
+    feedback = models.TextField(
+        blank=True,
+        help_text="Plain-language feedback visible to the submitter.",
+    )
+    justification = models.TextField(
+        blank=True,
+        help_text="Internal justification supporting the status or decision.",
+    )
+    additional_info = models.TextField(
+        blank=True,
+        help_text="More info supporting the decision.",
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="intervention_status_updates",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["intervention"], name="idx_status_intervention"),
+            models.Index(fields=["status"], name="idx_status_status"),
+            models.Index(fields=["decision_date"], name="idx_status_decision_date"),
+        ]
+
+    def __str__(self):
+        return f"{self.intervention} — {self.status}"
+
 
 
 auditlog.register(SelectionTool)
@@ -160,3 +236,5 @@ auditlog.register(SystemCategory)
 auditlog.register(InterventionSystemCategory)
 auditlog.register(InterventionScore)
 auditlog.register(CriteriaInformation)
+auditlog.register(DecisionType)
+auditlog.register(InterventionStatusUpdate)

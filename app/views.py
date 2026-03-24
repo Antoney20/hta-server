@@ -21,17 +21,22 @@ from dataclasses import asdict
 from rest_framework.views import APIView
 from app.services import criteria_info
 from app.services.public_view import PublicProposalService
+from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
 from users.models import InterventionProposal, UserRole
 from users.permissions import IsAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import CriteriaInformation, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import CriteriaInformation, DecisionType, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     CriteriaInformationCreateSerializer,
     CriteriaInformationSerializer,
+    DecisionTypeCreateSerializer,
+    DecisionTypeSerializer,
     InterventionScoreCreateSerializer,
+    InterventionStatusUpdateSerializer,
+    InterventionStatusUpdateWriteSerializer,
     SelectionToolSerializer,
     SystemCategorySerializer,
     InterventionSystemCategorySerializer,
@@ -678,6 +683,106 @@ class PublicProposalViewSet(ViewSet):
 
     def list(self, request):
         return Response(PublicProposalService.fetch())
+
+
+def _can_manage(user) -> bool:
+    return user.role in (UserRole.ADMIN, UserRole.SECRETARIAT)
+
+
+class TopicPriorityViewSet(viewsets.ModelViewSet):
+    """
+returns status info about an intervention
+    """
+
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+
+    def get_queryset(self):
+        return (
+            InterventionStatusUpdate.objects
+            .select_related("intervention", "decision")
+            .order_by("-created_at")
+        )
+
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return InterventionStatusUpdateWriteSerializer
+        return InterventionStatusUpdateSerializer
+
+    def _assert_can_manage(self, user):
+        if not _can_manage(user):
+            raise PermissionDenied(
+                "Only secretariat and admin can modify topic priority records."
+            )
+
+    def list(self, request, *args, **kwargs):
+        return Response(TopicPriorityService.fetch())
+
+    def create(self, request, *args, **kwargs):
+        self._assert_can_manage(request.user)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        instance = TopicPriorityService.create(serializer.validated_data, request.user)
+        return Response(
+            InterventionStatusUpdateSerializer(instance).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    def update(self, request, *args, **kwargs):
+        self._assert_can_manage(request.user)
+        instance = self.get_object()
+        serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get("partial", False))
+        serializer.is_valid(raise_exception=True)
+        instance = TopicPriorityService.update(instance, serializer.validated_data, request.user)
+        return Response(InterventionStatusUpdateSerializer(instance).data)
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._assert_can_manage(request.user)
+        instance = self.get_object()
+        TopicPriorityService.delete(instance)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+    
+
+
+class DecisionTypeViewSet(viewsets.ModelViewSet):
+    """
+   Viewset for decisions
+    """
+
+    permission_classes = [permissions.IsAuthenticatedOrReadOnly]
+    queryset = DecisionType.objects.all().order_by("name")
+
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return DecisionTypeCreateSerializer
+        return DecisionTypeSerializer
+
+    def _assert_can_manage(self, user):
+        if not _can_manage(user):
+            raise PermissionDenied(
+                "Only secretariat and admin can manage decision types."
+            )
+
+    def create(self, request, *args, **kwargs):
+        self._assert_can_manage(request.user)
+        return super().create(request, *args, **kwargs)
+
+    def update(self, request, *args, **kwargs):
+        self._assert_can_manage(request.user)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        self._assert_can_manage(request.user)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._assert_can_manage(request.user)
+        return super().destroy(request, *args, **kwargs)
+
+
 
 
 #matching

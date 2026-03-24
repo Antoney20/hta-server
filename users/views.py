@@ -896,15 +896,6 @@ def user_me(request):
 
 
 
-
-
-
-
-
-
-
-
-
 class InterventionProposalListView(ListAPIView):
     queryset = InterventionProposal.objects.all()
     serializer_class = InterventionProposalSerializer

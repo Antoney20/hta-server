@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import InterventionProposal
-from .models import CriteriaInformation, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import CriteriaInformation, DecisionType, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 
 
 class SelectionToolSerializer(serializers.ModelSerializer):
@@ -182,3 +182,81 @@ class PublicProposalSerializer(serializers.ModelSerializer):
         if obj.submitted_at:
             return obj.submitted_at.strftime("%Y-%m-%d")
         return None
+    
+    
+    
+class DecisionTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DecisionType
+        fields = ["id", "name", "description"]
+
+class DecisionTypeCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DecisionType
+        fields = ["name", "description"]
+
+class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
+    """Read — public-safe, enriched with system categories and decision detail."""
+
+    decision = DecisionTypeSerializer(read_only=True)
+    system_categories = serializers.SerializerMethodField()
+    intervention_name = serializers.CharField(
+        source="intervention.intervention_name", read_only=True
+    )
+    reference_number = serializers.CharField(
+        source="intervention.reference_number", read_only=True
+    )
+
+    class Meta:
+        model = InterventionStatusUpdate
+        fields = [
+            "id",
+            "reference_number",
+            "intervention_name",
+            "status",
+            "decision",
+            "decision_date",
+            "feedback",
+            "system_categories",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_system_categories(self, obj):
+        qs = InterventionSystemCategory.objects.filter(
+            intervention=obj.intervention
+        ).select_related("system_category")
+        return [
+            {"id": isc.system_category.id, "name": isc.system_category.name}
+            for isc in qs
+        ]
+
+
+class InterventionStatusUpdateWriteSerializer(serializers.ModelSerializer):
+    """Write — secretariat / admin only. justification is internal, excluded from read."""
+
+    class Meta:
+        model = InterventionStatusUpdate
+        fields = [
+            "intervention",
+            "status",
+            "decision",
+            "decision_date",
+            "feedback",
+            "justification",
+            "additional_info",
+        ]
+
+    def validate(self, attrs):
+        # decision_date is required when a formal decision is set
+        if attrs.get("decision") and not attrs.get("decision_date"):
+            raise serializers.ValidationError(
+                {"decision_date": "A decision date is required when setting a decision."}
+            )
+        return attrs
+
+
+
+
+    
+    
