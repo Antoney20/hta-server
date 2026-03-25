@@ -402,7 +402,7 @@ class InterventionProposalViewSet(viewsets.ModelViewSet):
 #             status=status.HTTP_201_CREATED,
 #         )
 
-        
+
 
 class InterventionScoreViewSet(viewsets.ModelViewSet):
     permission_classes = [permissions.IsAuthenticated]
@@ -442,10 +442,6 @@ class InterventionScoreViewSet(viewsets.ModelViewSet):
             "Use the rescore endpoint once a rescore window is open."
         )
  
-    # ------------------------------------------------------------------
-    # Bulk create  (unchanged)
-    # ------------------------------------------------------------------
- 
     @action(detail=False, methods=["post"], url_path="bulk")
     def bulk_create(self, request):
         items = request.data.get("scores", [])
@@ -478,11 +474,7 @@ class InterventionScoreViewSet(viewsets.ModelViewSet):
             InterventionScoreSerializer(created, many=True).data,
             status=status.HTTP_201_CREATED,
         )
- 
-    # ------------------------------------------------------------------
-    # Single rescore   PATCH /intervention-scores/<id>/rescore/
-    # ------------------------------------------------------------------
- 
+
     @action(detail=True, methods=["patch"], url_path="rescore")
     def rescore(self, request, pk=None):
         """
@@ -519,10 +511,6 @@ class InterventionScoreViewSet(viewsets.ModelViewSet):
  
         return Response(InterventionScoreSerializer(updated).data, status=status.HTTP_200_OK)
  
-    # ------------------------------------------------------------------
-    # Bulk rescore   POST /intervention-scores/bulk-rescore/
-    # ------------------------------------------------------------------
-
     @action(detail=False, methods=["patch"], url_path="bulk")
     def bulk_update(self, request):
         """

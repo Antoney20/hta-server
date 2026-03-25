@@ -169,25 +169,16 @@ class DecisionType(models.Model):
     def __str__(self):
         return self.name
 
-
 class InterventionStatusUpdate(models.Model):
 
-    STATUS_CHOICES = [
-        ("PENDING", "Pending"),
-        ("ON_REVIEW", "On Review"),
-        ("DECIDED", "Decided"),
-        ("CLOSED", "Closed"),
-        ("COMPLETE", "Complete")
-        
-    ]
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     intervention = models.ForeignKey(
         InterventionProposal,
         on_delete=models.CASCADE,
         related_name="status_updates",
     )
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default="PENDING")
+
     decision = models.ForeignKey(
         DecisionType,
         on_delete=models.PROTECT,
@@ -196,25 +187,26 @@ class InterventionStatusUpdate(models.Model):
         related_name="status_updates",
         help_text="Formal HTA decision once reached.",
     )
+
     decision_date = models.DateField(null=True, blank=True)
+
     feedback = models.TextField(
         blank=True,
         help_text="Plain-language feedback visible to the submitter.",
     )
-    justification = models.TextField(
-        blank=True,
-        help_text="Internal justification supporting the status or decision.",
-    )
+
     additional_info = models.TextField(
         blank=True,
         help_text="More info supporting the decision.",
     )
+
     updated_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
         null=True,
         related_name="intervention_status_updates",
     )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -222,14 +214,11 @@ class InterventionStatusUpdate(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["intervention"], name="idx_status_intervention"),
-            models.Index(fields=["status"], name="idx_status_status"),
             models.Index(fields=["decision_date"], name="idx_status_decision_date"),
         ]
 
     def __str__(self):
-        return f"{self.intervention} — {self.status}"
-
-
+        return f"{self.intervention} — Status Update"
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)

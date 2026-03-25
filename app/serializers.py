@@ -170,7 +170,6 @@ class PublicProposalSerializer(serializers.ModelSerializer):
             "intervention_name",
             "intervention_type",
             "beneficiary",
-            "justification",
             "expected_impact",
             "date",
         ]
@@ -195,55 +194,48 @@ class DecisionTypeCreateSerializer(serializers.ModelSerializer):
         model = DecisionType
         fields = ["name", "description"]
 
-class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
-    """Read — public-safe, enriched with system categories and decision detail."""
 
+class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
+    reference_number = serializers.CharField(source="intervention.reference_number")
+    intervention_id = serializers.CharField(source="intervention.id")
+    intervention_name = serializers.CharField(source="intervention.name")
     decision = DecisionTypeSerializer(read_only=True)
     system_categories = serializers.SerializerMethodField()
-    intervention_name = serializers.CharField(
-        source="intervention.intervention_name", read_only=True
-    )
-    reference_number = serializers.CharField(
-        source="intervention.reference_number", read_only=True
-    )
+    is_scored = serializers.BooleanField(read_only=True)  # from annotation
 
     class Meta:
         model = InterventionStatusUpdate
         fields = [
             "id",
             "reference_number",
+            "intervention_id",
             "intervention_name",
-            "status",
             "decision",
             "decision_date",
             "feedback",
             "system_categories",
+            "is_scored",
             "created_at",
             "updated_at",
         ]
 
     def get_system_categories(self, obj):
-        qs = InterventionSystemCategory.objects.filter(
-            intervention=obj.intervention
-        ).select_related("system_category")
-        return [
-            {"id": isc.system_category.id, "name": isc.system_category.name}
-            for isc in qs
-        ]
-
+        return list(
+            obj.intervention.system_categories.values_list(
+                "system_category__name", flat=True
+            )
+        )
 
 class InterventionStatusUpdateWriteSerializer(serializers.ModelSerializer):
-    """Write — secretariat / admin only. justification is internal, excluded from read."""
+    """Write — secretariat / admin only."""
 
     class Meta:
         model = InterventionStatusUpdate
         fields = [
             "intervention",
-            "status",
             "decision",
             "decision_date",
             "feedback",
-            "justification",
             "additional_info",
         ]
 
