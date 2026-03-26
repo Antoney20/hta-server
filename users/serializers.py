@@ -397,7 +397,7 @@ SAFE_TEXT_FIELDS = [
 
 
 ALLOWED_FILE_TYPES = [".pdf", ".doc", ".docx", ".png", ".jpg", ".jpeg"]
-MAX_FILE_SIZE_MB = 5
+MAX_FILE_SIZE_MB = 10
 
 
 class InterventionProposalSerializer(serializers.ModelSerializer):
@@ -484,7 +484,7 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
 
         # size check
         if file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
-            raise serializers.ValidationError("File too large (max 5MB).")
+            raise serializers.ValidationError("File too large (max 10MB).")
 
         ext = file.name.lower().rsplit(".", 1)[-1]
         if f".{ext}" not in ALLOWED_FILE_TYPES:
