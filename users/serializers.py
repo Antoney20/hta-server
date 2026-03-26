@@ -1,5 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+
+from users.utils.sanitize import sanitize_email
 from .models import   FAQ, ContactSubmission, CustomUser, Governance, MediaResource, Member , InterventionProposal, News, NewsletterSubscription, ProposalDocument, ProposalSubmission, TemporaryFile, UserRole
 from django.db.models import Q
 import logging
@@ -629,12 +631,31 @@ class ContactSubmissionSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['ip_address', 'created_at']
         
+
+
 class NewsletterSubscriptionSerializer(serializers.ModelSerializer):
+
     class Meta:
         model = NewsletterSubscription
         fields = ['id', 'email', 'is_active', 'subscribed_at']
         read_only_fields = ['id', 'is_active', 'subscribed_at']
 
+    def validate_email(self, value):
+        """
+        Sanitize and validate email input
+        """
+        value = sanitize_email(value)
 
+        if not value:
+            raise serializers.ValidationError(
+                "Email address is required."
+            )
+
+        if len(value) > 100:
+            raise serializers.ValidationError(
+                "Email must be less than 100 characters."
+            )
+
+        return value
 class NewsletterUnsubscribeSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)

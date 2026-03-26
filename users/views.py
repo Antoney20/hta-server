@@ -41,6 +41,7 @@ from django.utils.encoding import force_bytes, force_str
 
 from users.permissions import IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, IsSecretariatOrAdmin
 from users.serializers import ContactSubmissionSerializer, FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberAdminSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, NewsletterSubscriptionSerializer, NewsletterUnsubscribeSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer, VerifyUserSerializer
+from users.utils.sanitize import sanitize_email, sanitize_text
 from .models import FAQ, ContactSubmission, CustomUser, Governance, InterventionProposal, MediaResource, Member, News, NewsletterSubscription, ProposalSubmission, TemporaryFile, ProposalSubmissionStatus, ProposalDocument, UserStatus
 from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
@@ -1361,85 +1362,196 @@ class MediaResourceViewSet(viewsets.ModelViewSet):
 
 
 
+# class ContactSubmissionViewSet(viewsets.ModelViewSet):
+#     queryset = ContactSubmission.objects.all()
+#     serializer_class = ContactSubmissionSerializer
+    
+#     def get_permissions(self):
+#         """
+#         POST: Public (AllowAny)
+#         LIST, RETRIEVE, DELETE, UPDATE: Requires authentication
+#         """
+#         if self.action == 'create':
+#             return [AllowAny()]
+#         return [IsAuthenticated()]
+
+#     def create(self, request, *args, **kwargs):
+#         try:
+#             # Get client IP
+#             ip_address = get_client_ip(request)
+            
+#             # Check submission count for this IP
+#             submission_count = ContactSubmission.objects.filter(ip_address=ip_address).count()
+            
+#             if submission_count >= 10:
+#                 return Response(
+#                     {
+#                         'success': False,
+#                         'message': 'Maximum submission limit reached. Please contact us directly.'
+#                     },
+#                     status=status.HTTP_429_TOO_MANY_REQUESTS
+#                 )
+            
+#             data = request.data.copy()
+#             data['ip_address'] = ip_address
+            
+#             with transaction.atomic():
+#                 serializer = self.get_serializer(data=data)
+#                 if not serializer.is_valid():
+#                     return Response(
+#                         {
+#                             'success': False,
+#                             'message': 'Please check your form data.',
+#                             'errors': serializer.errors
+#                         },
+#                         status=status.HTTP_400_BAD_REQUEST
+#                     )
+                
+#                 contact_submission = serializer.save()
+
+#             def send_email_in_background(contact_submission):
+#                 try:
+#                     email_sent = send_contact_confirmation_email(contact_submission)
+#                     if email_sent:
+#                         logger.info(f" Background email sent successfully for contact submission {contact_submission.id}")
+#                     else:
+#                         logger.warning(f"Background email failed for contact submission {contact_submission.id}")
+#                 except Exception as e:
+#                     logger.error(f"Error in background email for contact submission {contact_submission.id}: {e}")
+
+#             threading.Thread(target=send_email_in_background, args=(contact_submission,), daemon=True).start()
+            
+#             return Response(
+#                 {
+#                     'success': True,
+#                     'message': 'Thank you for contacting us! We will get back to you soon.',
+#                     'submission_id': contact_submission.id
+#                 },
+#                 status=status.HTTP_201_CREATED
+#             )
+
+#         except Exception as e:
+#             logger.error(f"Error creating contact submission: {str(e)}", exc_info=True)
+#             return Response(
+#                 {
+#                     'success': False,
+#                     'message': 'Error submitting contact form. Please try again.'
+#                 },
+#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
+#             )
+
+
 class ContactSubmissionViewSet(viewsets.ModelViewSet):
     queryset = ContactSubmission.objects.all()
     serializer_class = ContactSubmissionSerializer
-    
+
     def get_permissions(self):
         """
         POST: Public (AllowAny)
-        LIST, RETRIEVE, DELETE, UPDATE: Requires authentication
+        Others: Authenticated only
         """
-        if self.action == 'create':
+        if self.action == "create":
             return [AllowAny()]
         return [IsAuthenticated()]
 
     def create(self, request, *args, **kwargs):
         try:
-            # Get client IP
             ip_address = get_client_ip(request)
-            
-            # Check submission count for this IP
-            submission_count = ContactSubmission.objects.filter(ip_address=ip_address).count()
-            
+            submission_count = ContactSubmission.objects.filter(
+                ip_address=ip_address
+            ).count()
+
             if submission_count >= 10:
                 return Response(
                     {
-                        'success': False,
-                        'message': 'Maximum submission limit reached. Please contact us directly.'
+                        "success": False,
+                        "message": "Maximum submission limit reached. Please contact us directly.",
                     },
-                    status=status.HTTP_429_TOO_MANY_REQUESTS
+                    status=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
-            
+
             data = request.data.copy()
-            data['ip_address'] = ip_address
-            
+
+            data["full_name"] = sanitize_text(
+                data.get("full_name"), 100
+            )
+
+            data["email"] = sanitize_email(
+                data.get("email")
+            )
+
+            data["organization"] = sanitize_text(
+                data.get("organization"), 100
+            )
+
+            data["subject"] = sanitize_text(
+                data.get("subject"), 100
+            )
+
+            data["message"] = sanitize_text(
+                data.get("message"), 2500
+            )
+
+            data["ip_address"] = ip_address
+
             with transaction.atomic():
                 serializer = self.get_serializer(data=data)
+
                 if not serializer.is_valid():
                     return Response(
                         {
-                            'success': False,
-                            'message': 'Please check your form data.',
-                            'errors': serializer.errors
+                            "success": False,
+                            "message": "Please check your form data.",
+                            "errors": serializer.errors,
                         },
-                        status=status.HTTP_400_BAD_REQUEST
+                        status=status.HTTP_400_BAD_REQUEST,
                     )
-                
+
                 contact_submission = serializer.save()
 
-            def send_email_in_background(contact_submission):
+            def send_email_in_background(obj):
                 try:
-                    email_sent = send_contact_confirmation_email(contact_submission)
+                    email_sent = send_contact_confirmation_email(obj)
                     if email_sent:
-                        logger.info(f" Background email sent successfully for contact submission {contact_submission.id}")
+                        logger.info(
+                            f"Background email sent for submission {obj.id}"
+                        )
                     else:
-                        logger.warning(f"Background email failed for contact submission {contact_submission.id}")
+                        logger.warning(
+                            f"Background email failed for submission {obj.id}"
+                        )
                 except Exception as e:
-                    logger.error(f"Error in background email for contact submission {contact_submission.id}: {e}")
+                    logger.error(
+                        f"Email error for submission {obj.id}: {e}"
+                    )
 
-            threading.Thread(target=send_email_in_background, args=(contact_submission,), daemon=True).start()
-            
+            threading.Thread(
+                target=send_email_in_background,
+                args=(contact_submission,),
+                daemon=True,
+            ).start()
+
             return Response(
                 {
-                    'success': True,
-                    'message': 'Thank you for contacting us! We will get back to you soon.',
-                    'submission_id': contact_submission.id
+                    "success": True,
+                    "message": "Thank you for contacting us! We will get back to you soon.",
+                    "submission_id": contact_submission.id,
                 },
-                status=status.HTTP_201_CREATED
+                status=status.HTTP_201_CREATED,
             )
 
         except Exception as e:
-            logger.error(f"Error creating contact submission: {str(e)}", exc_info=True)
+            logger.error(
+                f"Error creating contact submission: {str(e)}",
+                exc_info=True,
+            )
             return Response(
                 {
-                    'success': False,
-                    'message': 'Error submitting contact form. Please try again.'
+                    "success": False,
+                    "message": "Error submitting contact form. Please try again.",
                 },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
-
-
 
 class NewsletterSubscriptionViewSet(viewsets.ModelViewSet):
     queryset = NewsletterSubscription.objects.all()
@@ -1581,3 +1693,7 @@ class NewsletterSubscriptionViewSet(viewsets.ModelViewSet):
                 },
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
+            
+            
+            
+            

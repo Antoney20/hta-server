@@ -581,13 +581,24 @@ class MediaResource(models.Model):
 
 
 
+from django.db import models
+
+
 class ContactSubmission(models.Model):
     full_name = models.CharField(max_length=100)
-    email = models.EmailField()
-    organization = models.CharField(max_length=200, blank=True, null=True)
-    subject = models.CharField(max_length=200)
-    message = models.TextField()
+    email = models.EmailField(max_length=100)
+    organization = models.CharField(
+        max_length=100,
+        blank=True,
+        null=True
+    )
+
+    subject = models.CharField(max_length=100)
+
+    message = models.TextField(max_length=2000)
+
     ip_address = models.GenericIPAddressField(blank=True, null=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -599,11 +610,35 @@ class ContactSubmission(models.Model):
         return f"{self.full_name} - {self.subject}"
 
 
+# class NewsletterSubscription(models.Model):
+#     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+#     email = models.EmailField(unique=True)
+#     is_active = models.BooleanField(default=True)
+#     ip_address = models.GenericIPAddressField(null=True, blank=True)
+#     subscribed_at = models.DateTimeField(auto_now_add=True)
+#     unsubscribed_at = models.DateTimeField(null=True, blank=True)
 
+#     class Meta:
+#         ordering = ['-subscribed_at']
+#         verbose_name = "Newsletter Subscription"
+#         verbose_name_plural = "Newsletter Subscriptions"
+
+#     def __str__(self):
+#         status = "Active" if self.is_active else "Unsubscribed"
+#         return f"{self.email} - {status}"
+    
+#     def unsubscribe(self):
+#         """Unsubscribe the user"""
+#         from django.utils import timezone
+#         self.is_active = False
+#         self.unsubscribed_at = timezone.now()
+#         self.save()
+    
+    
 
 class NewsletterSubscription(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    email = models.EmailField(unique=True)
+    email = models.EmailField(unique=True, max_length=100)
     is_active = models.BooleanField(default=True)
     ip_address = models.GenericIPAddressField(null=True, blank=True)
     subscribed_at = models.DateTimeField(auto_now_add=True)
@@ -624,9 +659,7 @@ class NewsletterSubscription(models.Model):
         self.is_active = False
         self.unsubscribed_at = timezone.now()
         self.save()
-    
-    
-    
+     
     
     
     
