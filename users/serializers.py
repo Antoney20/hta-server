@@ -9,6 +9,7 @@ from django.db.models import Q
 import logging
 User = get_user_model()
 logger = logging.getLogger(__name__)
+from django.core.validators import EmailValidator
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -117,6 +118,26 @@ class VerifyUserSerializer(serializers.ModelSerializer):
 class LoginSerializer(serializers.Serializer):
     username_or_email = serializers.CharField()
     password = serializers.CharField(write_only=True)
+    
+    
+    def validate_username_or_email(self, value):
+        """
+        Sanitize and validate username/email input.
+        """
+
+        value = value.strip()
+
+        if not value:
+            raise serializers.ValidationError("This field cannot be empty.")
+
+        if "@" in value:
+            validator = EmailValidator()
+            try:
+                validator(value)
+            except Exception:
+                raise serializers.ValidationError("Enter a valid email address.")
+
+        return value.lower()
 
     def validate(self, data):
         username_or_email = data.get('username_or_email')
