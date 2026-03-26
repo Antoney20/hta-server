@@ -27,7 +27,7 @@ def sanitize_email(value: str) -> str:
     value = re.sub(r'\s+', '', value)
 
     # enforce max length
-    value = value[:100]
+    value = value[:50]
 
     return value
 

@@ -920,9 +920,12 @@ class InterventionProposalView(APIView):
     
     def post(self, request):
         try:
-            # Use atomic transaction for better error handling
             with transaction.atomic():
-                serializer = InterventionProposalSerializer(data=request.data)
+                # serializer = InterventionProposalSerializer(data=request.data)
+                serializer = InterventionProposalSerializer(
+                                data=request.data,
+                                context={"request": request}
+)
                 if not serializer.is_valid():
                     logger.error(f"Serializer errors: {serializer.errors}")
                     return Response({
@@ -984,7 +987,6 @@ class InterventionProposalView(APIView):
         for key, value in request_data.items():
             # Skip file fields - they're already processed and saved
             if key == 'uploaded_documents':
-                # Instead of the files, just store the count and names
                 if isinstance(value, list):
                     form_data['uploaded_documents_count'] = len(value)
                     form_data['uploaded_documents_names'] = [
@@ -1013,7 +1015,6 @@ def check_multiple_submissions(request):
         data = json.loads(request.body)
         submission_ids = data.get('submission_ids', [])
         
-        # Restrict to submissions the user is allowed to see
         submissions = ProposalSubmission.objects.filter(
             submission_id__in=submission_ids,
             user=request.user
@@ -1355,90 +1356,6 @@ class MediaResourceViewSet(viewsets.ModelViewSet):
     serializer_class = MediaResourceSerializer
     permission_classes = [IsOwnerOrAdminOrReadOnly]
     
-    
-    
-
-
-
-
-
-# class ContactSubmissionViewSet(viewsets.ModelViewSet):
-#     queryset = ContactSubmission.objects.all()
-#     serializer_class = ContactSubmissionSerializer
-    
-#     def get_permissions(self):
-#         """
-#         POST: Public (AllowAny)
-#         LIST, RETRIEVE, DELETE, UPDATE: Requires authentication
-#         """
-#         if self.action == 'create':
-#             return [AllowAny()]
-#         return [IsAuthenticated()]
-
-#     def create(self, request, *args, **kwargs):
-#         try:
-#             # Get client IP
-#             ip_address = get_client_ip(request)
-            
-#             # Check submission count for this IP
-#             submission_count = ContactSubmission.objects.filter(ip_address=ip_address).count()
-            
-#             if submission_count >= 10:
-#                 return Response(
-#                     {
-#                         'success': False,
-#                         'message': 'Maximum submission limit reached. Please contact us directly.'
-#                     },
-#                     status=status.HTTP_429_TOO_MANY_REQUESTS
-#                 )
-            
-#             data = request.data.copy()
-#             data['ip_address'] = ip_address
-            
-#             with transaction.atomic():
-#                 serializer = self.get_serializer(data=data)
-#                 if not serializer.is_valid():
-#                     return Response(
-#                         {
-#                             'success': False,
-#                             'message': 'Please check your form data.',
-#                             'errors': serializer.errors
-#                         },
-#                         status=status.HTTP_400_BAD_REQUEST
-#                     )
-                
-#                 contact_submission = serializer.save()
-
-#             def send_email_in_background(contact_submission):
-#                 try:
-#                     email_sent = send_contact_confirmation_email(contact_submission)
-#                     if email_sent:
-#                         logger.info(f" Background email sent successfully for contact submission {contact_submission.id}")
-#                     else:
-#                         logger.warning(f"Background email failed for contact submission {contact_submission.id}")
-#                 except Exception as e:
-#                     logger.error(f"Error in background email for contact submission {contact_submission.id}: {e}")
-
-#             threading.Thread(target=send_email_in_background, args=(contact_submission,), daemon=True).start()
-            
-#             return Response(
-#                 {
-#                     'success': True,
-#                     'message': 'Thank you for contacting us! We will get back to you soon.',
-#                     'submission_id': contact_submission.id
-#                 },
-#                 status=status.HTTP_201_CREATED
-#             )
-
-#         except Exception as e:
-#             logger.error(f"Error creating contact submission: {str(e)}", exc_info=True)
-#             return Response(
-#                 {
-#                     'success': False,
-#                     'message': 'Error submitting contact form. Please try again.'
-#                 },
-#                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
-#             )
 
 
 class ContactSubmissionViewSet(viewsets.ModelViewSet):
@@ -1446,10 +1363,6 @@ class ContactSubmissionViewSet(viewsets.ModelViewSet):
     serializer_class = ContactSubmissionSerializer
 
     def get_permissions(self):
-        """
-        POST: Public (AllowAny)
-        Others: Authenticated only
-        """
         if self.action == "create":
             return [AllowAny()]
         return [IsAuthenticated()]
@@ -1457,243 +1370,89 @@ class ContactSubmissionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         try:
             ip_address = get_client_ip(request)
-            submission_count = ContactSubmission.objects.filter(
-                ip_address=ip_address
-            ).count()
-
-            if submission_count >= 10:
+            if ContactSubmission.objects.filter(ip_address=ip_address).count() >= 10:
                 return Response(
-                    {
-                        "success": False,
-                        "message": "Maximum submission limit reached. Please contact us directly.",
-                    },
+                    {"success": False, "message": "Maximum submissions reached. Contact us directly."},
                     status=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
 
             data = request.data.copy()
-
-            data["full_name"] = sanitize_text(
-                data.get("full_name"), 100
-            )
-
-            data["email"] = sanitize_email(
-                data.get("email")
-            )
-
-            data["organization"] = sanitize_text(
-                data.get("organization"), 100
-            )
-
-            data["subject"] = sanitize_text(
-                data.get("subject"), 100
-            )
-
-            data["message"] = sanitize_text(
-                data.get("message"), 2500
-            )
-
+            data["full_name"] = sanitize_text(data.get("full_name"), 50)
+            data["email"] = sanitize_email(data.get("email"))
+            data["organization"] = sanitize_text(data.get("organization"), 50)
+            data["subject"] = sanitize_text(data.get("subject"), 50)
+            data["message"] = sanitize_text(data.get("message"), 2500)
             data["ip_address"] = ip_address
 
             with transaction.atomic():
                 serializer = self.get_serializer(data=data)
+                serializer.is_valid(raise_exception=True)
+                submission = serializer.save()
 
-                if not serializer.is_valid():
-                    return Response(
-                        {
-                            "success": False,
-                            "message": "Please check your form data.",
-                            "errors": serializer.errors,
-                        },
-                        status=status.HTTP_400_BAD_REQUEST,
-                    )
-
-                contact_submission = serializer.save()
-
-            def send_email_in_background(obj):
-                try:
-                    email_sent = send_contact_confirmation_email(obj)
-                    if email_sent:
-                        logger.info(
-                            f"Background email sent for submission {obj.id}"
-                        )
-                    else:
-                        logger.warning(
-                            f"Background email failed for submission {obj.id}"
-                        )
-                except Exception as e:
-                    logger.error(
-                        f"Email error for submission {obj.id}: {e}"
-                    )
-
+            #  confirmation email in background sending
             threading.Thread(
-                target=send_email_in_background,
-                args=(contact_submission,),
-                daemon=True,
+                target=lambda obj=submission: send_contact_confirmation_email(obj),
+                daemon=True
             ).start()
 
             return Response(
-                {
-                    "success": True,
-                    "message": "Thank you for contacting us! We will get back to you soon.",
-                    "submission_id": contact_submission.id,
-                },
-                status=status.HTTP_201_CREATED,
+                {"success": True, "message": "Thank you! We'll get back to you soon.", "submission_id": submission.id},
+                status=status.HTTP_201_CREATED
+            )
+        except Exception as e:
+            logger.error(f"Contact submission error: {e}", exc_info=True)
+            return Response(
+                {"success": False, "message": "Error submitting form. Please try again."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-        except Exception as e:
-            logger.error(
-                f"Error creating contact submission: {str(e)}",
-                exc_info=True,
-            )
-            return Response(
-                {
-                    "success": False,
-                    "message": "Error submitting contact form. Please try again.",
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
 
 class NewsletterSubscriptionViewSet(viewsets.ModelViewSet):
     queryset = NewsletterSubscription.objects.all()
     serializer_class = NewsletterSubscriptionSerializer
-    
+
     def get_permissions(self):
-        """
-        POST (subscribe): Public (AllowAny)
-        POST (unsubscribe): Public (AllowAny)
-        LIST, RETRIEVE, DELETE, UPDATE: Requires authentication
-        """
         if self.action in ['create', 'unsubscribe']:
             return [AllowAny()]
         return [IsAuthenticated()]
 
     def create(self, request, *args, **kwargs):
-        """Subscribe to newsletter"""
-        email = request.data.get('email', '').strip().lower()
-        
+        email = sanitize_email(request.data.get("email"))
         if not email:
-            return Response(
-                {
-                    'success': False,
-                    'message': 'Email address is required.'
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
+            return Response({"success": False, "message": "Email is required."}, status=400)
+
         try:
-            # Check if email already exists
             existing = NewsletterSubscription.objects.filter(email=email).first()
-            
             if existing:
                 if existing.is_active:
-                    return Response(
-                        {
-                            'success': False,
-                            'message': 'This email is already subscribed to our newsletter.'
-                        },
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-                else:
-                    # Reactivate subscription
-                    existing.is_active = True
-                    existing.unsubscribed_at = None
-                    existing.ip_address = get_client_ip(request)
-                    existing.save()
-                    
-                    return Response(
-                        {
-                            'success': True,
-                            'message': 'Welcome back! You have been resubscribed to our newsletter.'
-                        },
-                        status=status.HTTP_200_OK
-                    )
-            
-            # Create new subscription
-            subscription = NewsletterSubscription.objects.create(
-                email=email,
-                ip_address=get_client_ip(request)
-            )
-            
-            logger.info(f"New newsletter subscription: {email}")
-            
-            return Response(
-                {
-                    'success': True,
-                    'message': 'Thank you for subscribing to our newsletter!'
-                },
-                status=status.HTTP_201_CREATED
-            )
-            
+                    return Response({"success": False, "message": "Email already subscribed."}, status=400)
+                existing.is_active = True
+                existing.unsubscribed_at = None
+                existing.ip_address = get_client_ip(request)
+                existing.save()
+                return Response({"success": True, "message": "Resubscribed successfully."}, status=200)
+
+            NewsletterSubscription.objects.create(email=email, ip_address=get_client_ip(request))
+            return Response({"success": True, "message": "Subscribed successfully."}, status=201)
+
         except IntegrityError:
-            return Response(
-                {
-                    'success': False,
-                    'message': 'This email is already subscribed.'
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
+            return Response({"success": False, "message": "Email already subscribed."}, status=400)
         except Exception as e:
-            logger.error(f"Error subscribing to newsletter: {e}")
-            return Response(
-                {
-                    'success': False,
-                    'message': 'An error occurred. Please try again.'
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            logger.error(f"Newsletter subscription error: {e}")
+            return Response({"success": False, "message": "Error. Please try again."}, status=500)
 
     @action(detail=False, methods=['post'], url_path='unsubscribe')
     def unsubscribe(self, request):
-        """Unsubscribe from newsletter"""
-        serializer = NewsletterUnsubscribeSerializer(data=request.data)
-        
-        if not serializer.is_valid():
-            return Response(
-                {
-                    'success': False,
-                    'message': 'Please provide a valid email address.'
-                },
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        email = serializer.validated_data['email'].strip().lower()
-        
-        try:
-            subscription = NewsletterSubscription.objects.filter(
-                email=email,
-                is_active=True
-            ).first()
-            
-            if not subscription:
-                return Response(
-                    {
-                        'success': False,
-                        'message': 'This email is not subscribed to our newsletter.'
-                    },
-                    status=status.HTTP_404_NOT_FOUND
-                )
-            
-            subscription.unsubscribe()
-            logger.info(f"Newsletter unsubscription: {email}")
-            
-            return Response(
-                {
-                    'success': True,
-                    'message': 'You have been successfully unsubscribed from our newsletter.'
-                },
-                status=status.HTTP_200_OK
-            )
-            
-        except Exception as e:
-            logger.error(f"Error unsubscribing from newsletter: {e}")
-            return Response(
-                {
-                    'success': False,
-                    'message': 'An error occurred. Please try again.'
-                },
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
-            
+        email = sanitize_email(request.data.get("email"))
+        if not email:
+            return Response({"success": False, "message": "Valid email required."}, status=400)
+
+        subscription = NewsletterSubscription.objects.filter(email=email, is_active=True).first()
+        if not subscription:
+            return Response({"success": False, "message": "Email not subscribed."}, status=404)
+
+        subscription.unsubscribe()
+        return Response({"success": True, "message": "Unsubscribed successfully."}, status=200)         
             
             
             

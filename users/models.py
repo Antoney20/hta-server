@@ -155,8 +155,7 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
             self.is_active = False
         super().save(*args, **kwargs)
         
-        
-        
+
 
 class Member(models.Model):
     user = models.OneToOneField(CustomUser, on_delete=models.CASCADE, null=True, blank=True)
@@ -171,67 +170,6 @@ class Member(models.Model):
         return f"{self.position} - {self.organization}"
     
     
-    
-    
-    
-    
-    
-    
-    
-    
-
-
-
-
-
-# def document_upload_path(instance, filename):
-#     """Generate upload path with timestamp"""
-#     timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
-#     name, ext = os.path.splitext(filename)
-#     return f'documents/{name}_{timestamp}{ext}'
-
-# class InterventionProposal(models.Model):
-#     name = models.CharField(max_length=100)
-#     phone = models.CharField(max_length=20)
-#     email = models.EmailField(blank=True, null=True)
-#     profession = models.CharField(max_length=100, blank=True, null=True)
-#     organization = models.CharField(max_length=200, blank=True, null=True)
-#     county = models.CharField(max_length=100, blank=True, null=True)
-#     intervention_name = models.CharField(max_length=200, blank=True, null=True)
-#     intervention_type = models.CharField(max_length=100, blank=True, null=True)
-#     beneficiary = models.TextField(blank=True, null=True)
-#     justification = models.TextField(blank=True, null=True)
-#     expected_impact = models.TextField(blank=True, null=True)
-#     additional_info = models.TextField(blank=True, null=True)
-#     signature = models.CharField(max_length=200)
-#     date = models.DateField(blank=True, null=True)
-#     ip_address = models.GenericIPAddressField(blank=True, null=True)
-#     user_agent = models.TextField(blank=True, null=True)  
-#     submitted_at = models.DateTimeField(auto_now_add=True)
-#     user = models.ForeignKey(CustomUser, on_delete=models.SET_NULL, null=True, blank=True)
-#     is_public = models.BooleanField(default=False)
-    
-#     def __str__(self):
-#         return f"{self.intervention_name} - {self.name}"
-    
-#     class Meta:
-#             permissions = [
-#                 ("can_submit_proposal", "Can submit a proposal"),
-#                 ("can_view_all_proposals", "Can view all proposals"),
-#             ]
-
-# class ProposalDocument(models.Model):
-#     proposal = models.ForeignKey(InterventionProposal, on_delete=models.CASCADE, related_name='documents')
-#     document = models.FileField(upload_to=document_upload_path)
-#     original_name = models.CharField(max_length=255)
-#     uploaded_at = models.DateTimeField(auto_now_add=True)
-#     is_public = models.BooleanField(default=False)
-    
-#     def __str__(self):
-#         return f"Document for {self.proposal.intervention_name} - {self.original_name}"
- 
-   
-   
    
 def document_upload_path(instance, filename):
     """Generate upload path with UUID to avoid collisions"""
@@ -403,7 +341,7 @@ class InterventionProposal(models.Model):
                         raise
                     continue
                 
-                # For deadlocks, retry with exponential backoff
+
                 delay = base_delay * (2 ** attempt)
                 logger.warning(f"Deadlock detected on attempt {attempt + 1}/{max_retries}. Retrying in {delay:.2f}s")
                 time.sleep(delay)
@@ -578,17 +516,11 @@ class MediaResource(models.Model):
         return self.title
 
 
-
-
-
-from django.db import models
-
-
 class ContactSubmission(models.Model):
     full_name = models.CharField(max_length=100)
-    email = models.EmailField(max_length=100)
+    email = models.EmailField(max_length=50)
     organization = models.CharField(
-        max_length=100,
+        max_length=50,
         blank=True,
         null=True
     )
@@ -596,9 +528,7 @@ class ContactSubmission(models.Model):
     subject = models.CharField(max_length=100)
 
     message = models.TextField(max_length=2000)
-
     ip_address = models.GenericIPAddressField(blank=True, null=True)
-
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -607,7 +537,7 @@ class ContactSubmission(models.Model):
         verbose_name_plural = "Contact Submissions"
 
     def __str__(self):
-        return f"{self.full_name} - {self.subject}"
+        return f"{self.full_name} - {self.subject} - {self.created_at}"
 
 
 # class NewsletterSubscription(models.Model):
@@ -651,7 +581,7 @@ class NewsletterSubscription(models.Model):
 
     def __str__(self):
         status = "Active" if self.is_active else "Unsubscribed"
-        return f"{self.email} - {status}"
+        return f"{self.email} - {status} - {self.subscribed_at} "
     
     def unsubscribe(self):
         """Unsubscribe the user"""
@@ -663,9 +593,7 @@ class NewsletterSubscription(models.Model):
     
     
     
- 
- 
- 
+
 #  new model for email logics
 
 

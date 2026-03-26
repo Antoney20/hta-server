@@ -104,14 +104,6 @@ class CriteriaInformationCreateSerializer(serializers.ModelSerializer):
         ]
 
 
-# class InterventionScoreCreateSerializer(serializers.ModelSerializer):
-#     """Used for POST/PATCH — minimal fields, reviewer injected from request."""
-#     class Meta:
-#         model = InterventionScore
-#         fields = ["id", "intervention", "criteria", "score", "comment"]
-#         read_only_fields = ["id"]
-
-
 class InterventionScoreCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = InterventionScore
@@ -142,7 +134,7 @@ class InterventionScoreSerializer(serializers.ModelSerializer):
             "reviewer_name", "reviewer_email",
             "intervention_name", "intervention_reference",
         ]
-        read_only_fields = fields  # everything is read-only on GET
+        read_only_fields = fields  
 
     def get_reviewer_name(self, obj) -> str:
         return  obj.reviewer.username

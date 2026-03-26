@@ -773,9 +773,3 @@ class DecisionTypeViewSet(viewsets.ModelViewSet):
 
 
 
-#matching
-# - 20 first chars
-# - remove special chars numbers only remain with chars (efficient regex)
-
-
-

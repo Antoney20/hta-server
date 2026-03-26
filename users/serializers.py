@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
+import re
 
+from app.core.input_validation import contains_attack, sanitize_text
 from users.utils.sanitize import sanitize_email
 from .models import   FAQ, ContactSubmission, CustomUser, Governance, MediaResource, Member , InterventionProposal, News, NewsletterSubscription, ProposalDocument, ProposalSubmission, TemporaryFile, UserRole
 from django.db.models import Q
@@ -13,13 +15,11 @@ class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
     password_confirm = serializers.CharField(write_only=True)
 
-    # Member profile fields
     position = serializers.CharField(max_length=200, required=False, allow_blank=True)
     organization = serializers.CharField(max_length=200, required=False, allow_blank=True)
     phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True)
 
-    # Add profile_image field
     profile_image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
@@ -96,8 +96,7 @@ class VerifyUserSerializer(serializers.ModelSerializer):
         But allow explicit setting for clarity (e.g., rejection).
         """
         if not value:
-            # Optionally, you could set status to REJECTED here if UserStatus has it,
-            # but per requirement, "false remains same" so just allow it without additional logic.
+
             pass
         return value
 
@@ -109,8 +108,6 @@ class VerifyUserSerializer(serializers.ModelSerializer):
         """
         if validated_data.get('is_active', False):
             instance.is_active = True
-            # Optionally set status to ACTIVE if you have a PENDING status
-            # instance.status = UserStatus.ACTIVE
         else:
             # Remains the same (inactive)
             pass
@@ -139,7 +136,6 @@ class LoginSerializer(serializers.Serializer):
         if not user.check_password(password):
             raise serializers.ValidationError("Invalid password. Please check your password and try again.")
 
-        # Check if user is active
         if not user.is_active:
             raise serializers.ValidationError("Your account is inactive. Please contact support.")
 
@@ -176,7 +172,6 @@ class MemberSerializer(serializers.ModelSerializer):
         if user_data:
             email = user_data.get('email')
             if email:
-                # Split into name and domain
                 parts = email.split('@')
                 if len(parts) == 2:
                     name, domain = parts
@@ -308,73 +303,6 @@ class ProposalDocumentSerializer(serializers.ModelSerializer):
         return None
 
 
-# class InterventionProposalSerializer(serializers.ModelSerializer):
-#     uploaded_documents = serializers.ListField(
-#         child=serializers.FileField(max_length=255, allow_empty_file=False),
-#         write_only=True,
-#         required=False
-#     )
-#     uploadedDocument = serializers.FileField(
-#         max_length=255, allow_empty_file=False, write_only=True, required=False
-#     )
-    
-#     # Add these fields to handle camelCase from frontend
-#     interventionName = serializers.CharField(
-#         source='intervention_name', 
-#         required=False, 
-#         allow_blank=True, 
-#         allow_null=True
-#     )
-#     interventionType = serializers.CharField(
-#         source='intervention_type', 
-#         required=False, 
-#         allow_blank=True, 
-#         allow_null=True
-#     )
-    
-#     # Add this to properly serialize documents
-#     documents = ProposalDocumentSerializer(many=True, read_only=True)
-
-#     class Meta:
-#         model = InterventionProposal
-#         fields = [
-#             'id',
-#             'name', 'phone', 'email', 'profession', 'organization', 'county',
-#             'intervention_name', 'intervention_type', 'beneficiary',
-#             'justification', 'expected_impact', 'additional_info', 'reference_number',
-#             'signature', 'date', 'uploaded_documents', 'uploadedDocument', 'is_public',
-#             'interventionName', 'interventionType',
-#             'documents'  
-#         ]
-#         read_only_fields = ['id', 'reference_number', 'documents']
-
-#     def create(self, validated_data):
-#         # Remove camelCase fields from validated_data
-#         validated_data.pop('interventionName', None)
-#         validated_data.pop('interventionType', None)
-        
-#         uploaded_documents = validated_data.pop('uploaded_documents', [])
-#         uploaded_document = validated_data.pop('uploadedDocument', None)
-        
-#         if uploaded_document:
-#             uploaded_documents.append(uploaded_document)
-        
-#         proposal = InterventionProposal.objects.create(**validated_data)
-        
-#         for document in uploaded_documents:
-#             logger.info(f"Saving document: {document.name}")
-#             ProposalDocument.objects.create(
-#                 proposal=proposal,
-#                 document=document,
-#                 original_name=document.name,
-#                 is_public=proposal.is_public
-#             )
-        
-#         logger.info(f"Proposal {proposal.id} created with {proposal.documents.count()} documents")
-#         return proposal
-
-
-
 def _mask(value: str) -> str:
     """
     Masks a string: keeps first and last char, replaces middle with ********.
@@ -386,28 +314,121 @@ def _mask(value: str) -> str:
 
 MASKED_FIELDS = ["name", "phone", "email", "county", "signature"]
 
+# class InterventionProposalSerializer(serializers.ModelSerializer):
+#     uploaded_documents = serializers.ListField(
+#         child=serializers.FileField(max_length=255, allow_empty_file=False),
+#         write_only=True,
+#         required=False
+#     )
+#     uploadedDocument = serializers.FileField(
+#         max_length=255, allow_empty_file=False, write_only=True, required=False
+#     )
+#     interventionName = serializers.CharField(
+#         source='intervention_name',
+#         required=False,
+#         allow_blank=True,
+#         allow_null=True
+#     )
+#     interventionType = serializers.CharField(
+#         source='intervention_type',
+#         required=False,
+#         allow_blank=True,
+#         allow_null=True
+#     )
+#     documents = ProposalDocumentSerializer(many=True, read_only=True)
+
+#     class Meta:
+#         model = InterventionProposal
+#         fields = [
+#             'id',
+#             'name', 'phone', 'email', 'profession', 'organization', 'county',
+#             'intervention_name', 'intervention_type', 'beneficiary',
+#             'justification', 'expected_impact', 'additional_info', 'reference_number',
+#             'signature', 'date', 'uploaded_documents', 'uploadedDocument', 'is_public',
+#             'interventionName', 'interventionType', 'rescore_open',
+#             'documents'
+#         ]
+#         read_only_fields = ['id', 'reference_number','rescore_open', 'documents']
+
+#     def to_representation(self, instance):
+#         data = super().to_representation(instance)
+#         for field in MASKED_FIELDS:
+#             if field in data and data[field]:
+#                 data[field] = _mask(str(data[field]))
+#         return data
+
+#     def create(self, validated_data):
+#         validated_data.pop('interventionName', None)
+#         validated_data.pop('interventionType', None)
+
+#         uploaded_documents = validated_data.pop('uploaded_documents', [])
+#         uploaded_document = validated_data.pop('uploadedDocument', None)
+
+#         if uploaded_document:
+#             uploaded_documents.append(uploaded_document)
+
+#         proposal = InterventionProposal.objects.create(**validated_data)
+
+#         for document in uploaded_documents:
+#             logger.info(f"Saving document: {document.name}")
+#             ProposalDocument.objects.create(
+#                 proposal=proposal,
+#                 document=document,
+#                 original_name=document.name,
+#                 is_public=proposal.is_public
+#             )
+
+#         logger.info(f"Proposal {proposal.id} created with {proposal.documents.count()} documents")
+#         return proposal
+
+SAFE_TEXT_FIELDS = [
+    "name",
+    "profession",
+    "organization",
+    "county",
+    "intervention_name",
+    "intervention_type",
+    "beneficiary",
+    "justification",
+    "expected_impact",
+    "additional_info",
+    "signature",
+]
+
+
+ALLOWED_FILE_TYPES = [".pdf", ".doc", ".docx", ".png", ".jpg", ".jpeg"]
+MAX_FILE_SIZE_MB = 5
+
 
 class InterventionProposalSerializer(serializers.ModelSerializer):
+
     uploaded_documents = serializers.ListField(
         child=serializers.FileField(max_length=255, allow_empty_file=False),
         write_only=True,
         required=False
     )
+
     uploadedDocument = serializers.FileField(
-        max_length=255, allow_empty_file=False, write_only=True, required=False
+        max_length=255,
+        allow_empty_file=False,
+        write_only=True,
+        required=False
     )
+
     interventionName = serializers.CharField(
         source='intervention_name',
         required=False,
         allow_blank=True,
         allow_null=True
     )
+
     interventionType = serializers.CharField(
         source='intervention_type',
         required=False,
         allow_blank=True,
         allow_null=True
     )
+
     documents = ProposalDocumentSerializer(many=True, read_only=True)
 
     class Meta:
@@ -416,21 +437,91 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
             'id',
             'name', 'phone', 'email', 'profession', 'organization', 'county',
             'intervention_name', 'intervention_type', 'beneficiary',
-            'justification', 'expected_impact', 'additional_info', 'reference_number',
-            'signature', 'date', 'uploaded_documents', 'uploadedDocument', 'is_public',
-            'interventionName', 'interventionType', 'rescore_open',
+            'justification', 'expected_impact', 'additional_info',
+            'reference_number',
+            'signature', 'date',
+            'uploaded_documents', 'uploadedDocument',
+            'is_public',
+            'interventionName', 'interventionType',
+            'rescore_open',
             'documents'
         ]
-        read_only_fields = ['id', 'reference_number','rescore_open', 'documents']
+
+        read_only_fields = ['id', 'reference_number', 'rescore_open', 'documents']
+
+
+    def validate_name(self, value):
+        value = sanitize_text(value)
+
+        if not re.match(r"^[A-Za-z\s\-\.'’]{2,100}$", value):
+            raise serializers.ValidationError("Invalid name.")
+
+        return value
+
+    def validate_phone(self, value):
+        value = sanitize_text(value)
+
+        if not re.match(r"^\+?[0-9]{7,15}$", value):
+            raise serializers.ValidationError("Invalid phone number.")
+
+        return value
+
+    def validate_email(self, value):
+        if value:
+            return value.lower().strip()
+        return value
+    
+    def validate_uploaded_documents(self, files):
+        for file in files:
+            self._validate_file(file)
+        return files
+
+    def validate_uploadedDocument(self, file):
+        self._validate_file(file)
+        return file
+
+    def _validate_file(self, file):
+
+        # size check
+        if file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
+            raise serializers.ValidationError("File too large (max 5MB).")
+
+        ext = file.name.lower().rsplit(".", 1)[-1]
+        if f".{ext}" not in ALLOWED_FILE_TYPES:
+            raise serializers.ValidationError("Unsupported file type.")
+
+        file.name = sanitize_text(file.name)
+
+    def validate(self, attrs):
+
+        for field in SAFE_TEXT_FIELDS:
+            if field in attrs and attrs[field]:
+                cleaned = sanitize_text(attrs[field])
+
+                if contains_attack(cleaned):
+                    raise serializers.ValidationError(
+                        {field: "Suspicious input detected."}
+                    )
+
+                attrs[field] = cleaned
+
+        return attrs
+
 
     def to_representation(self, instance):
         data = super().to_representation(instance)
+
         for field in MASKED_FIELDS:
             if field in data and data[field]:
                 data[field] = _mask(str(data[field]))
+
         return data
 
+
     def create(self, validated_data):
+
+        request = self.context.get("request")
+
         validated_data.pop('interventionName', None)
         validated_data.pop('interventionType', None)
 
@@ -440,10 +531,13 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
         if uploaded_document:
             uploaded_documents.append(uploaded_document)
 
+        if request:
+            validated_data["ip_address"] = self._get_client_ip(request)
+            validated_data["user_agent"] = request.META.get("HTTP_USER_AGENT", "")[:500]
+
         proposal = InterventionProposal.objects.create(**validated_data)
 
         for document in uploaded_documents:
-            logger.info(f"Saving document: {document.name}")
             ProposalDocument.objects.create(
                 proposal=proposal,
                 document=document,
@@ -451,8 +545,17 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
                 is_public=proposal.is_public
             )
 
-        logger.info(f"Proposal {proposal.id} created with {proposal.documents.count()} documents")
+        logger.info(
+            f"Proposal {proposal.id} created with {proposal.documents.count()} documents"
+        )
+
         return proposal
+
+    def _get_client_ip(self, request):
+        x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+        if x_forwarded_for:
+            return x_forwarded_for.split(",")[0].strip()
+        return request.META.get("REMOTE_ADDR")
 
 class ProposalSubmissionSerializer(serializers.ModelSerializer):
     temp_files = serializers.SerializerMethodField()
@@ -547,7 +650,6 @@ class MemberAdminSerializer(serializers.ModelSerializer):
         fields = ['phone_number', 'notes', 'organization', 'role']
 
     def update(self, instance, validated_data):
-        # Pop nested user data
         user_data = validated_data.pop('user', {})
 
         # Update Member fields
@@ -569,18 +671,6 @@ class FAQSerializer(serializers.ModelSerializer):
     class Meta:
         model = FAQ
         fields = '__all__'
-
-# class NewsSerializer(serializers.ModelSerializer):
-#     tags_list = serializers.ReadOnlyField(source='get_tags_list')
-    
-#     class Meta:
-#         model = News
-#         fields = '__all__'
-
-# class GovernanceSerializer(serializers.ModelSerializer):
-#     class Meta:
-#         model = Governance
-#         fields = '__all__'
 
 
 class GovernanceSerializer(serializers.ModelSerializer):
@@ -630,32 +720,45 @@ class ContactSubmissionSerializer(serializers.ModelSerializer):
         model = ContactSubmission
         fields = '__all__'
         read_only_fields = ['ip_address', 'created_at']
-        
 
+    def validate_full_name(self, value):
+        value = sanitize_text(value, 50)
+        if not value:
+            raise serializers.ValidationError("Full name is required.")
+        return value
+
+    def validate_email(self, value):
+        value = sanitize_email(value)
+        if not value:
+            raise serializers.ValidationError("Email is required.")
+        return value
+
+    def validate_organization(self, value):
+        return sanitize_text(value, 50)
+
+    def validate_subject(self, value):
+        value = sanitize_text(value, 100)
+        if not value:
+            raise serializers.ValidationError("Subject is required.")
+        return value
+
+    def validate_message(self, value):
+        value = sanitize_text(value, 2000)
+        if not value:
+            raise serializers.ValidationError("Message is required.")
+        return value
 
 class NewsletterSubscriptionSerializer(serializers.ModelSerializer):
-
     class Meta:
         model = NewsletterSubscription
         fields = ['id', 'email', 'is_active', 'subscribed_at']
         read_only_fields = ['id', 'is_active', 'subscribed_at']
 
     def validate_email(self, value):
-        """
-        Sanitize and validate email input
-        """
         value = sanitize_email(value)
-
         if not value:
-            raise serializers.ValidationError(
-                "Email address is required."
-            )
-
-        if len(value) > 100:
-            raise serializers.ValidationError(
-                "Email must be less than 100 characters."
-            )
-
+            raise serializers.ValidationError("Email is required.")
         return value
+    
 class NewsletterUnsubscribeSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)
