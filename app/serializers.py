@@ -190,7 +190,7 @@ class DecisionTypeCreateSerializer(serializers.ModelSerializer):
 class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
     reference_number = serializers.CharField(source="intervention.reference_number")
     intervention_id = serializers.CharField(source="intervention.id")
-    intervention_name = serializers.CharField(source="intervention.name")
+    intervention_name = serializers.CharField(source="intervention.intervention_name")
     decision = DecisionTypeSerializer(read_only=True)
     system_categories = serializers.SerializerMethodField()
     is_scored = serializers.BooleanField(read_only=True)  # from annotation
@@ -217,6 +217,8 @@ class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
                 "system_category__name", flat=True
             )
         )
+        
+        
 
 class InterventionStatusUpdateWriteSerializer(serializers.ModelSerializer):
     """Write — secretariat / admin only."""
