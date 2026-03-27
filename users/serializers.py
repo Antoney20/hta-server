@@ -9,7 +9,8 @@ from django.db.models import Q
 import logging
 User = get_user_model()
 logger = logging.getLogger(__name__)
-from django.core.validators import EmailValidator
+from django.core.validators import EmailValidator, validate_email
+from django.core.exceptions import ValidationError as DjangoValidationError
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -736,40 +737,57 @@ class MediaResourceSerializer(serializers.ModelSerializer):
         fields = '__all__'
         
 
+
 class ContactSubmissionSerializer(serializers.ModelSerializer):
+
+    email = serializers.EmailField()
+
     class Meta:
         model = ContactSubmission
         fields = '__all__'
         read_only_fields = ['ip_address', 'created_at']
 
     def validate_full_name(self, value):
-        value = sanitize_text(value, 50)
+        value = sanitize_text(value)
         if not value:
             raise serializers.ValidationError("Full name is required.")
         return value
 
     def validate_email(self, value):
         value = sanitize_email(value)
-        if not value:
-            raise serializers.ValidationError("Email is required.")
+
+        try:
+            validate_email(value)
+        except DjangoValidationError:
+            raise serializers.ValidationError("Enter a valid email address.")
+
+        # require real domain
+        local, domain = value.rsplit("@", 1)
+        if "." not in domain:
+            raise serializers.ValidationError(
+                "Please enter a valid email address."
+            )
+
         return value
 
     def validate_organization(self, value):
-        return sanitize_text(value, 50)
+        return sanitize_text(value)
 
     def validate_subject(self, value):
-        value = sanitize_text(value, 100)
+        value = sanitize_text(value)
         if not value:
             raise serializers.ValidationError("Subject is required.")
         return value
 
     def validate_message(self, value):
-        value = sanitize_text(value, 2000)
+        value = sanitize_text(value)
         if not value:
             raise serializers.ValidationError("Message is required.")
         return value
 
 class NewsletterSubscriptionSerializer(serializers.ModelSerializer):
+    email = serializers.EmailField()
+
     class Meta:
         model = NewsletterSubscription
         fields = ['id', 'email', 'is_active', 'subscribed_at']
@@ -777,9 +795,21 @@ class NewsletterSubscriptionSerializer(serializers.ModelSerializer):
 
     def validate_email(self, value):
         value = sanitize_email(value)
-        if not value:
-            raise serializers.ValidationError("Email is required.")
+
+        try:
+            validate_email(value)
+        except DjangoValidationError:
+            raise serializers.ValidationError("Enter a valid email address.")
+
+        local, domain = value.rsplit("@", 1)
+
+        if "." not in domain:
+            raise serializers.ValidationError(
+                "Please enter a real email address."
+            )
+
         return value
-    
+
+  
 class NewsletterUnsubscribeSerializer(serializers.Serializer):
     email = serializers.EmailField(required=True)

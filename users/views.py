@@ -1370,42 +1370,41 @@ class ContactSubmissionViewSet(viewsets.ModelViewSet):
     def create(self, request, *args, **kwargs):
         try:
             ip_address = get_client_ip(request)
+
             if ContactSubmission.objects.filter(ip_address=ip_address).count() >= 10:
                 return Response(
-                    {"success": False, "message": "Maximum submissions reached. Contact us directly."},
+                    {
+                        "success": False,
+                        "message": "Maximum submissions reached. Contact us directly."
+                    },
                     status=status.HTTP_429_TOO_MANY_REQUESTS,
                 )
 
-            data = request.data.copy()
-            data["full_name"] = sanitize_text(data.get("full_name"), 50)
-            data["email"] = sanitize_email(data.get("email"))
-            data["organization"] = sanitize_text(data.get("organization"), 50)
-            data["subject"] = sanitize_text(data.get("subject"), 50)
-            data["message"] = sanitize_text(data.get("message"), 2500)
-            data["ip_address"] = ip_address
+            serializer = self.get_serializer(data=request.data)
 
-            with transaction.atomic():
-                serializer = self.get_serializer(data=data)
-                serializer.is_valid(raise_exception=True)
-                submission = serializer.save()
+            serializer.is_valid(raise_exception=True)
 
-            #  confirmation email in background sending
+            submission = serializer.save(ip_address=ip_address)
             threading.Thread(
                 target=lambda obj=submission: send_contact_confirmation_email(obj),
                 daemon=True
             ).start()
 
             return Response(
-                {"success": True, "message": "Thank you! We'll get back to you soon.", "submission_id": submission.id},
+                {
+                    "success": True,
+                    "message": "Thank you! We'll get back to you soon.",
+                    "submission_id": submission.id
+                },
                 status=status.HTTP_201_CREATED
             )
+
         except Exception as e:
             logger.error(f"Contact submission error: {e}", exc_info=True)
             return Response(
                 {"success": False, "message": "Error submitting form. Please try again."},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
-
 
 class NewsletterSubscriptionViewSet(viewsets.ModelViewSet):
     queryset = NewsletterSubscription.objects.all()
@@ -1416,30 +1415,47 @@ class NewsletterSubscriptionViewSet(viewsets.ModelViewSet):
             return [AllowAny()]
         return [IsAuthenticated()]
 
+
     def create(self, request, *args, **kwargs):
-        email = sanitize_email(request.data.get("email"))
-        if not email:
-            return Response({"success": False, "message": "Email is required."}, status=400)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        email = serializer.validated_data["email"]
 
         try:
             existing = NewsletterSubscription.objects.filter(email=email).first()
+
             if existing:
                 if existing.is_active:
-                    return Response({"success": False, "message": "Email already subscribed."}, status=400)
+                    return Response(
+                        {"success": False, "message": "Email validation failed."},
+                        status=400
+                    )
+
                 existing.is_active = True
                 existing.unsubscribed_at = None
                 existing.ip_address = get_client_ip(request)
                 existing.save()
-                return Response({"success": True, "message": "Resubscribed successfully."}, status=200)
 
-            NewsletterSubscription.objects.create(email=email, ip_address=get_client_ip(request))
-            return Response({"success": True, "message": "Subscribed successfully."}, status=201)
+                return Response(
+                    {"success": True, "message": "Resubscribed successfully."},
+                    status=200
+                )
 
-        except IntegrityError:
-            return Response({"success": False, "message": "Email already subscribed."}, status=400)
+            serializer.save(ip_address=get_client_ip(request))
+
+            return Response(
+                {"success": True, "message": "Subscribed successfully."},
+                status=201
+            )
+
         except Exception as e:
             logger.error(f"Newsletter subscription error: {e}")
-            return Response({"success": False, "message": "Error. Please try again."}, status=500)
+            return Response(
+                {"success": False, "message": "Error. Please try again."},
+                status=500
+            )
 
     @action(detail=False, methods=['post'], url_path='unsubscribe')
     def unsubscribe(self, request):
