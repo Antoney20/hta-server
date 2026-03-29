@@ -118,6 +118,13 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         help_text="Specific permissions for this user."
     )
+    
+    
+    # sec
+    login_attempts = models.PositiveIntegerField(default=0)
+    last_failed_login = models.DateTimeField(blank=True, null=True)
+    last_login_ip = models.GenericIPAddressField(blank=True, null=True)
+
 
     USERNAME_FIELD = "email"
     REQUIRED_FIELDS = ["username"]

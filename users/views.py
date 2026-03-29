@@ -39,6 +39,7 @@ from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
 
 
+from members.services.dashboard import DashboardService
 from users.permissions import IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, IsSecretariatOrAdmin
 from users.serializers import ContactSubmissionSerializer, FAQSerializer, GovernanceSerializer, InterventionProposalSerializer, LoginSerializer, MediaResourceSerializer, MemberAdminSerializer, MemberListSerializer, MemberSerializer, NewsSerializer, NewsletterSubscriptionSerializer, NewsletterUnsubscribeSerializer, ProposalSubmissionSerializer, RegisterSerializer, UserMeSerializer, UserSerializer, VerifyUserSerializer
 from users.utils.sanitize import sanitize_email, sanitize_text
@@ -47,7 +48,7 @@ from django.contrib.auth.decorators import login_required, permission_required
 from django.core.exceptions import PermissionDenied
 # from .tasks import retry_failed_proposal_submission, send_proposal_confirmation_email_task
 from members.models import Announcement, Channel, PriorityLevel, ProposalTracker, ReviewComment, ReviewStage, ReviewerAssignment, Task, TaskStatus, ThematicArea,  Event
-from .utils.email import send_confirmation_email, send_password_change_confirmation, send_password_reset_email, send_contact_confirmation_email,  send_user_acknowledgment_email,  send_secretariate_notification_email, send_verification_success_email,  send_rejection_email
+from .utils.email import send_confirmation_email, send_password_change_confirmation, send_password_reset_email, send_contact_confirmation_email, send_security_alert_email,  send_user_acknowledgment_email,  send_secretariate_notification_email, send_verification_success_email,  send_rejection_email
 
 from datetime import timedelta
 from django.db.models import Count, Q, Avg
@@ -57,7 +58,9 @@ User = get_user_model()
 
 from rest_framework.generics import ListAPIView,  RetrieveAPIView
 
-ALLOWED_EXTENSIONS = {'.pdf', '.doc', '.docx', '.jpg', '.png'}
+ALLOWED_EXTENSIONS = {'.pdf', '.png'}
+
+MAX_LOGIN_ATTEMPTS = 3
     
 logger = logging.getLogger(__name__)
 
@@ -248,25 +251,65 @@ class EmailVerifyView(generics.GenericAPIView):
         }, status=status.HTTP_200_OK)
 
 
-class LoginView(APIView):
-    """User login view"""
-    permission_classes = [AllowAny]
+# class LoginView(APIView):
+#     """User login view"""
+#     permission_classes = [AllowAny]
     
+#     def post(self, request):
+#         try:
+#             serializer = LoginSerializer(data=request.data)
+#             serializer.is_valid(raise_exception=True)
+            
+#             user = serializer.validated_data['user']
+            
+#             refresh = RefreshToken.for_user(user)
+#             access_token = refresh.access_token
+            
+#             # Update last login
+#             login(request, user)
+            
+#             logger.info(f"User logged in: {user.email}")
+            
+#             return Response({
+#                 'success': True,
+#                 'message': 'Login successful',
+#                 'user': UserSerializer(user).data,
+#                 'tokens': {
+#                     'access': str(access_token),
+#                     'refresh': str(refresh)
+#                 }
+#             }, status=status.HTTP_200_OK)
+            
+#         except Exception as e:
+#             logger.error(f"Login error: {str(e)}")
+#             return Response({
+#                 'success': False,
+#                 'message': 'Login failed. Please try again.'
+#             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+
     def post(self, request):
         try:
             serializer = LoginSerializer(data=request.data)
             serializer.is_valid(raise_exception=True)
-            
+
             user = serializer.validated_data['user']
-            
+
+            user.login_attempts = 0
+            user.last_failed_login = None
+            user.save(update_fields=["login_attempts", "last_failed_login"])
+
             refresh = RefreshToken.for_user(user)
             access_token = refresh.access_token
-            
-            # Update last login
+
             login(request, user)
-            
+
             logger.info(f"User logged in: {user.email}")
-            
+
             return Response({
                 'success': True,
                 'message': 'Login successful',
@@ -276,14 +319,35 @@ class LoginView(APIView):
                     'refresh': str(refresh)
                 }
             }, status=status.HTTP_200_OK)
-            
+
         except Exception as e:
+            email = request.data.get("email")
+
+            try:
+                user = CustomUser.objects.filter(email=email).first()
+
+                if user:
+                    user.login_attempts += 1
+                    user.last_failed_login = timezone.now()
+
+                    if user.login_attempts == MAX_LOGIN_ATTEMPTS:
+                        send_security_alert_email(user)
+
+                    # auto block account for 10 or more attempts
+                    if user.login_attempts >= 10:
+                        user.status = UserStatus.BLOCKED
+
+                    user.save()
+
+            except Exception as inner_error:
+                logger.error(f"Attempt tracking error: {inner_error}")
+
             logger.error(f"Login error: {str(e)}")
+
             return Response({
                 'success': False,
-                'message': 'Login failed. Please try again.'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
-
+                'message': 'Invalid email or password'
+            }, status=status.HTTP_400_BAD_REQUEST)
 
 class PasswordResetRequestView(generics.GenericAPIView):
     """
@@ -894,9 +958,6 @@ def user_me(request):
 
 
 
-
-
-
 class InterventionProposalListView(ListAPIView):
     queryset = InterventionProposal.objects.all()
     serializer_class = InterventionProposalSerializer
@@ -1065,242 +1126,12 @@ class MemberAdminAPIView(generics.RetrieveUpdateDestroyAPIView):
         return MemberListSerializer
     
     
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_dashboard_data(request):
-    """
-    Get complete dashboard data with all statistics and reports
-    """
-    try:
-        # Calculate all stats
-        stats = {
-            'total_proposals': ProposalTracker.objects.count(),
-            'total_users': User.objects.filter(is_active=True).count(),
-            'total_announcements': Announcement.objects.count(),
-            'total_tasks': Task.objects.exclude(status=TaskStatus.COMPLETED).count(),
-            'total_events': Event.objects.filter(start_date__gte=timezone.now()).count(),
-            'total_channels': Channel.objects.count(),
-            'active_reviewers': ReviewerAssignment.objects.values('reviewer').distinct().count(),
-            'pending_reviews': ProposalTracker.objects.filter(
-                review_stage__in=[ReviewStage.INITIAL, ReviewStage.UNDER_REVIEW]
-            ).count(),
-        }
-
-        # Proposal status distribution
-        proposal_status_distribution = []
-        status_counts = ProposalTracker.objects.values('review_stage').annotate(
-            count=Count('id')
-        ).order_by('review_stage')
-        
-        total_proposals = stats['total_proposals'] or 1
-        for item in status_counts:
-            stage_label = dict(ReviewStage.choices).get(item['review_stage'], item['review_stage'])
-            proposal_status_distribution.append({
-                'status': stage_label,
-                'count': item['count'],
-                'percentage': round((item['count'] / total_proposals) * 100, 2)
-            })
-
-        # Recent activities (last 10)
-        recent_activities = []
-        
-        # Recent proposals
-        recent_proposals = ProposalTracker.objects.select_related('proposal').order_by('-created_at')[:3]
-        for tracker in recent_proposals:
-            recent_activities.append({
-                'id': str(tracker.id),
-                'type': 'proposal',
-                'title': 'New Proposal Submitted',
-                'description': tracker.proposal.intervention_name,
-                'user': tracker.proposal.proposer_name if hasattr(tracker.proposal, 'proposer_name') else 'Unknown',
-                'timestamp': get_time_ago(tracker.created_at),
-                'status': dict(ReviewStage.choices).get(tracker.review_stage, tracker.review_stage)
-            })
-
-        # Recent announcements
-        recent_announcements = Announcement.objects.order_by('-created_at')[:3]
-        for announcement in recent_announcements:
-            recent_activities.append({
-                'id': str(announcement.id),
-                'type': 'announcement',
-                'title': announcement.title,
-                'description': announcement.content[:100] + '...' if len(announcement.content) > 100 else announcement.content,
-                'user': announcement.created_by.username if announcement.created_by else 'Admin',
-                'timestamp': get_time_ago(announcement.created_at)
-            })
-
-        # Recent tasks
-        recent_tasks = Task.objects.filter(status=TaskStatus.COMPLETED).order_by('-completed_at')[:2]
-        for task in recent_tasks:
-            recent_activities.append({
-                'id': str(task.id),
-                'type': 'task',
-                'title': 'Task Completed',
-                'description': task.title,
-                'user': task.created_by.username if task.created_by else 'Unknown',
-                'timestamp': get_time_ago(task.completed_at) if task.completed_at else 'Recently',
-                'status': 'Completed'
-            })
-
-        # Recent comments
-        recent_comments = ReviewComment.objects.select_related('reviewer', 'tracker').order_by('-created_at')[:2]
-        for comment in recent_comments:
-            recent_activities.append({
-                'id': str(comment.id),
-                'type': 'comment',
-                'title': 'Review Comment Added',
-                'description': comment.content[:100] + '...' if len(comment.content) > 100 else comment.content,
-                'user': comment.reviewer.username if comment.reviewer else 'Unknown',
-                'timestamp': get_time_ago(comment.created_at)
-            })
-
-        # Sort by timestamp and limit to 10
-        recent_activities = sorted(recent_activities, key=lambda x: x.get('timestamp', ''), reverse=False)[:10]
-
-        # Thematic area statistics
-        thematic_areas = []
-        thematic_stats = ThematicArea.objects.filter(is_active=True).annotate(
-            proposal_count=Count('proposaltracker')
-        ).order_by('-proposal_count')
-        
-        for area in thematic_stats:
-            thematic_areas.append({
-                'id': str(area.id),
-                'name': area.name,
-                'proposal_count': area.proposal_count,
-                'color_code': area.color_code
-            })
-
-        # Priority distribution
-        priority_distribution = []
-        priority_counts = ProposalTracker.objects.filter(
-            priority_level__isnull=False
-        ).values('priority_level').annotate(count=Count('id'))
-        
-        total_with_priority = sum(item['count'] for item in priority_counts) or 1
-        for item in priority_counts:
-            priority_label = dict(PriorityLevel.choices).get(item['priority_level'], item['priority_level'])
-            priority_distribution.append({
-                'priority': priority_label,
-                'count': item['count'],
-                'percentage': round((item['count'] / total_with_priority) * 100, 2)
-            })
-
-        # Reviewer workload
-        reviewer_workload = []
-        reviewers = ReviewerAssignment.objects.values('reviewer').annotate(
-            assigned_count=Count('id'),
-            avg_progress=Avg('progress')
-        ).order_by('-assigned_count')[:5]
-        
-        for reviewer_data in reviewers:
-            reviewer = User.objects.get(id=reviewer_data['reviewer'])
-            assignments = ReviewerAssignment.objects.filter(reviewer=reviewer)
-            completed = assignments.filter(progress=100).count()
-            pending = assignments.exclude(progress=100).count()
-            
-            reviewer_workload.append({
-                'id': str(reviewer.id),
-                'reviewer_name': reviewer.username or reviewer.username,
-                'assigned_proposals': reviewer_data['assigned_count'],
-                'completed_reviews': completed,
-                'pending_reviews': pending,
-                'average_progress': round(reviewer_data['avg_progress'] or 0, 2)
-            })
-
-        # Implementation progress
-        implementation_progress = []
-        impl_counts = ProposalTracker.objects.filter(
-            implementation_status__isnull=False
-        ).values('implementation_status').annotate(count=Count('id'))
-        
-        total_impl = sum(item['count'] for item in impl_counts) or 1
-        for item in impl_counts:
-            from .models import ImplementationStatus
-            status_label = dict(ImplementationStatus.choices).get(item['implementation_status'], item['implementation_status'])
-            implementation_progress.append({
-                'status': status_label,
-                'count': item['count'],
-                'percentage': round((item['count'] / total_impl) * 100, 2)
-            })
-
-        # Monthly trends (last 6 months)
-        monthly_trends = []
-        today = timezone.now()
-        for i in range(5, -1, -1):
-            month_start = (today - timedelta(days=30*i)).replace(day=1)
-            month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(seconds=1)
-            
-            submitted = ProposalTracker.objects.filter(
-                created_at__gte=month_start,
-                created_at__lte=month_end
-            ).count()
-            
-            approved = ProposalTracker.objects.filter(
-                review_stage=ReviewStage.APPROVED,
-                updated_at__gte=month_start,
-                updated_at__lte=month_end
-            ).count()
-            
-            rejected = ProposalTracker.objects.filter(
-                review_stage=ReviewStage.REJECTED,
-                updated_at__gte=month_start,
-                updated_at__lte=month_end
-            ).count()
-            
-            monthly_trends.append({
-                'month': month_start.strftime('%b'),
-                'proposals_submitted': submitted,
-                'proposals_approved': approved,
-                'proposals_rejected': rejected
-            })
-
-        # Compile response
-        dashboard_data = {
-            'stats': stats,
-            'proposal_status_distribution': proposal_status_distribution,
-            'recent_activities': recent_activities,
-            'thematic_areas': thematic_areas,
-            'priority_distribution': priority_distribution,
-            'reviewer_workload': reviewer_workload,
-            'implementation_progress': implementation_progress,
-            'monthly_trends': monthly_trends
-        }
-
-        return Response(dashboard_data, status=status.HTTP_200_OK)
-
-    except Exception as e:
-        return Response(
-            {'error': str(e), 'message': 'Failed to fetch dashboard data'},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
-
-
-@api_view(['GET'])
-@permission_classes([IsAuthenticated])
-def get_dashboard_stats(request):
-    """
-    Get only dashboard statistics
-    """
-    try:
-        stats = {
-            'total_proposals': ProposalTracker.objects.count(),
-            'total_users': User.objects.filter(is_active=True).count(),
-            'total_announcements': Announcement.objects.count(),
-            'total_tasks': Task.objects.exclude(status=TaskStatus.COMPLETED).count(),
-            'total_events': Event.objects.filter(start_date__gte=timezone.now()).count(),
-            'total_channels': Channel.objects.count(),
-            'active_reviewers': ReviewerAssignment.objects.values('reviewer').distinct().count(),
-            'pending_reviews': ProposalTracker.objects.filter(
-                review_stage__in=[ReviewStage.INITIAL, ReviewStage.UNDER_REVIEW]
-            ).count(),
-        }
-        return Response(stats, status=status.HTTP_200_OK)
-    except Exception as e:
-        return Response(
-            {'error': str(e)},
-            status=status.HTTP_500_INTERNAL_SERVER_ERROR
-        )
+class DashboardStatsView(APIView):
+    permission_classes = [IsAuthenticated]
+ 
+    def get(self, request: Request) -> Response:
+        return Response(DashboardService.get_stats(request.user))
+ 
 
 
 def get_time_ago(dt):

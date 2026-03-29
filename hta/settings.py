@@ -247,6 +247,7 @@ USE_TZ = True
 
 
 AUTH_USER_MODEL = 'users.CustomUser'
+MAX_LOGIN_ATTEMPTS = 3
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/

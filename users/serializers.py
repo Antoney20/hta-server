@@ -162,6 +162,8 @@ class LoginSerializer(serializers.Serializer):
             raise serializers.ValidationError("Your account is inactive. Please contact support.")
 
         return {"user": user}
+    
+    
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -418,7 +420,7 @@ SAFE_TEXT_FIELDS = [
 ]
 
 
-ALLOWED_FILE_TYPES = [".pdf", ".doc", ".docx", ".png", ".jpg", ".jpeg"]
+ALLOWED_FILE_TYPES = [".pdf"]
 MAX_FILE_SIZE_MB = 10
 
 
