@@ -42,6 +42,7 @@ class InterventionReport:
     total_score: int
     criteria_scored: int
     criteria_total: int
+    scored_at: Optional[str] = None
     reviewers: list[ReviewerStatus] = field(default_factory=list)
     unscored_reviewers: list[ReviewerStatus] = field(default_factory=list)
 
@@ -118,16 +119,21 @@ class ScoringReportService:
 
         # 4. Score index: { intervention_id: { reviewer_id: { criteria_name: score_value } } }
         score_index: dict[str, dict[int, dict[str, int]]] = {}
+        scored_index: dict[str, str] = {} 
         for s in (
             InterventionScore.objects
             .select_related("reviewer", "criteria")
             .filter(intervention__in=list(qs))
+            .order_by("created_at") 
         ):
             (
                 score_index
                 .setdefault(str(s.intervention_id), {})
                 .setdefault(s.reviewer_id, {})
             )[s.criteria.criteria.strip()] = ScoringReportService._score_value(s.score)
+            
+            if iid not in scored_index:   
+                scored_index[iid] = s.created_at.isoformat()
 
         # 5. Build per-intervention reports — skip interventions with total_score == 0
         reports: list[InterventionReport] = []
@@ -173,6 +179,7 @@ class ScoringReportService:
                 intervention_name=getattr(iv, "intervention_name", str(iv)),
                 intervention_type=getattr(iv, "intervention_type", None),
                 system_categories=[sc.system_category.name for sc in iv.system_categories.all()],
+                scored_at= scored_index.get(iid), 
                 total_score=total_score,
                 criteria_scored=len(scored_criteria),
                 criteria_total=len(all_criteria_names),
