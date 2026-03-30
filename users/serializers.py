@@ -420,9 +420,8 @@ SAFE_TEXT_FIELDS = [
 ]
 
 
-ALLOWED_FILE_TYPES = [".pdf"]
+ALLOWED_FILE_TYPES = [".pdf", ".xlsx", ".docx"]
 MAX_FILE_SIZE_MB = 10
-
 
 class InterventionProposalSerializer(serializers.ModelSerializer):
 
@@ -504,15 +503,16 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
         self._validate_file(file)
         return file
 
-    def _validate_file(self, file):
 
-        # size check
+
+    def _validate_file(self, file):
         if file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
             raise serializers.ValidationError("File too large (max 10MB).")
 
-        ext = file.name.lower().rsplit(".", 1)[-1]
-        if f".{ext}" not in ALLOWED_FILE_TYPES:
-            raise serializers.ValidationError("Unsupported file type.")
+        ext = "." + file.name.lower().rsplit(".", 1)[-1]
+        if ext not in ALLOWED_FILE_TYPES:
+            raise serializers.ValidationError("Unsupported file type. Allowed: PDF, XLSX, DOCX.")
+
 
         file.name = sanitize_text(file.name)
 
