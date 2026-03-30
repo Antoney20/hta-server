@@ -568,24 +568,24 @@ class UserViewSet(viewsets.ReadOnlyModelViewSet):
 class TaskViewSet(viewsets.ModelViewSet):
     serializer_class = TaskSerializer
     permission_classes = [IsAuthenticated]
- 
+
     def get_queryset(self):
         params = {k: self.request.query_params.get(k) for k in ("status", "priority", "due")}
         return TaskService.get_queryset(self.request.user, params)
- 
+
     def perform_create(self, serializer):
-        serializer.save()
- 
+        serializer.save(created_by=self.request.user)  # ← was missing
+
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         task = TaskService.complete_task(request.user, self.get_object())
         return Response(self.get_serializer(task).data)
- 
+
     @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
         task = TaskService.reopen_task(request.user, self.get_object())
         return Response(self.get_serializer(task).data)
- 
+
     @action(detail=True, methods=["post"])
     def assign_users(self, request, pk=None):
         task = self.get_object()
@@ -595,37 +595,36 @@ class TaskViewSet(viewsets.ModelViewSet):
             "assigned_to": assigned_to,
             "message": f"Task assigned to {len(assigned_to)} users",
         })
- 
-    # -- progress ------------------------------------------------------------
- 
+
     @action(detail=True, methods=["patch"])
     def update_progress(self, request, pk=None):
         task = TaskService.update_progress(request.user, self.get_object(), request.data.get("progress"))
         return Response(self.get_serializer(task).data)
- 
-    # -- list helpers (navbar / dashboard) -----------------------------------
- 
+
     @action(detail=False, methods=["get"])
     def my_tasks(self, request):
-        from django.db.models import Q
+        # Always scope to the requesting user's own tasks, regardless of role.
+        # get_queryset() returns ALL tasks for admins, so we filter explicitly here.
         qs = (
-            self.get_queryset()
-            .filter(Q(assigned_users=request.user) | Q(created_by=request.user))
+            Task.objects.filter(
+                Q(assigned_users=request.user) | Q(created_by=request.user)
+            )
             .distinct()
+            .select_related("created_by")
+            .prefetch_related("assignments__user", "assignments__assigned_by")
         )
         if s := request.query_params.get("status"):
             qs = qs.filter(status=s)
         return Response(self.get_serializer(qs, many=True).data)
- 
+
     @action(detail=False, methods=["get"])
     def completed_tasks(self, request):
         qs = self.get_queryset().filter(status=TaskStatus.COMPLETED)
         return Response(self.get_serializer(qs, many=True).data)
- 
+
     @action(detail=False, methods=["get"])
     def stats(self, request):
         return Response(TaskService.stats(request.user))
- 
 
 class ForumViewSet(viewsets.ModelViewSet):
     queryset = Channel.objects.all()
