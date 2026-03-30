@@ -120,19 +120,36 @@ class ScoringReportService:
         # 4. Score index: { intervention_id: { reviewer_id: { criteria_name: score_value } } }
         score_index: dict[str, dict[int, dict[str, int]]] = {}
         scored_index: dict[str, str] = {} 
+        # for s in (
+        #     InterventionScore.objects
+        #     .select_related("reviewer", "criteria")
+        #     .filter(intervention__in=list(qs))
+        #     .order_by("created_at") 
+        # ):
+        #     (
+        #         score_index
+        #         .setdefault(str(s.intervention_id), {})
+        #         .setdefault(s.reviewer_id, {})
+        #     )[s.criteria.criteria.strip()] = ScoringReportService._score_value(s.score)
+            
+        #     if iid not in scored_index:   
+        #         scored_index[iid] = s.created_at.isoformat()
+        
+                
         for s in (
             InterventionScore.objects
             .select_related("reviewer", "criteria")
             .filter(intervention__in=list(qs))
-            .order_by("created_at") 
+            .order_by("created_at")
         ):
+            iid = str(s.intervention_id)   # ← assign iid here first
             (
                 score_index
-                .setdefault(str(s.intervention_id), {})
+                .setdefault(iid, {})
                 .setdefault(s.reviewer_id, {})
             )[s.criteria.criteria.strip()] = ScoringReportService._score_value(s.score)
-            
-            if iid not in scored_index:   
+
+            if iid not in scored_index:
                 scored_index[iid] = s.created_at.isoformat()
 
         # 5. Build per-intervention reports — skip interventions with total_score == 0
