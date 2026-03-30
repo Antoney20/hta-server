@@ -14,10 +14,6 @@ from datetime import timedelta
 import json
 import os
 from pathlib import Path
-from django.conf import settings
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -28,75 +24,66 @@ os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
 # See https://docs.djangoproject.com/en/5.2/howto/deployment/checklist/
 
 # Secret Key
-SECRET_KEY = os.getenv("SECRET_KEY")
+SECRET_KEY = '83d29a715b21a101f7860ca9c8904b0465edd9fb2c5b2eef2e4f74953920166b'
 
 # Debug mode
-DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
+DEBUG = False
 
 # Allowed Hosts
-ALLOWED_HOSTS = os.getenv("ALLOWED_HOSTS", "").split(",")
-
-
-# Django security settings
-SECURE_BROWSER_XSS_FILTER = True
-SECURE_CONTENT_TYPE_NOSNIFF = True
-X_FRAME_OPTIONS = 'DENY'
+ALLOWED_HOSTS = ['bptap.health.go.ke','localhost','127.0.0.1']
 
 # Enable CSRF protection
-CSRF_COOKIE_SECURE = True  
-CSRF_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SAMESITE = 'Lax'
+# CSRF_COOKIE_SECURE = True  
+# CSRF_COOKIE_HTTPONLY = True
+# CSRF_COOKIE_SAMESITE = 'Lax'
 
-CSRF_TRUSTED_ORIGINS = [
-    "http://localhost:3000",  
-    "https://localhost:3000", 
-    'https://prod-hta.vercel.app'
-]
-
-
+# CSRF_TRUSTED_ORIGINS = [
+#     "http://localhost:3000",  
+#     "https://localhost:3000", 
+#     'https://prod-hta.vercel.app'
+# ]
 
 # HTTP security settings
-if not DEBUG:
-    SECURE_SSL_REDIRECT = True
-    SECURE_HSTS_SECONDS = 31536000  # 1 year
-    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
-    SECURE_HSTS_PRELOAD = True
-    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-    SESSION_COOKIE_SECURE = True
+# if not DEBUG:
+#     SECURE_SSL_REDIRECT = True
+#     SECURE_HSTS_SECONDS = 31536000  # 1 year
+#     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+#     SECURE_HSTS_PRELOAD = True
+#     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+#     SESSION_COOKIE_SECURE = True
 
 
 
 
 # CORS Settings
-CORS_ORIGIN_ALLOW_ALL = False 
-CORS_ALLOW_CREDENTIALS = True 
+# CORS_ORIGIN_ALLOW_ALL = False 
+# CORS_ALLOW_CREDENTIALS = True 
 
-CORS_ALLOWED_ORIGINS = [
-    'http://localhost:3000', 
-    'https://localhost:3000', 
-    'https://prod-hta.vercel.app'
-]
+# CORS_ALLOWED_ORIGINS = [
+#     'http://localhost:3000', 
+#     'https://localhost:3000', 
+#     'https://prod-hta.vercel.app'
+# ]
 
-
-CORS_ALLOW_METHODS = [
-    'DELETE',
-    'GET',
-    'OPTIONS',
-    'PATCH',
-    'POST',
-    'PUT',
-]
-CORS_ALLOW_HEADERS = [
-    'accept',
-    'accept-encoding',
-    'authorization',
-    'content-type',
-    'dnt',
-    'origin',
-    'user-agent',
-    'x-csrftoken',
-    'x-requested-with',
-]
+# CORS_ALLOW_METHODS = [
+#     'DELETE',
+#     'GET',
+#     'OPTIONS',
+#     'PATCH',
+#     'POST',
+#     'PUT',
+# ]
+# CORS_ALLOW_HEADERS = [
+#     'accept',
+#     'accept-encoding',
+#     'authorization',
+#     'content-type',
+#     'dnt',
+#     'origin',
+#     'user-agent',
+#     'x-csrftoken',
+#     'x-requested-with',
+# ]
 
 
 # Application definition
@@ -113,26 +100,22 @@ INSTALLED_APPS = [
     'rest_framework_simplejwt',
     # 'rest_framework_simplejwt.token_blacklist',  
     
-    # 'users',
-    'users.apps.UsersConfig',
+
+    
+    'users',
+   # 'users.apps.UsersConfig',
     'members',
     'app',
     'corsheaders',
     
+    # 
     'channels',
     'channels_redis',
     #  audit log
     'auditlog',
-    'django_crontab',
     
     
 ]
-
-CRONJOBS = [
-    # Every 10 minutes
-    ('*/10 * * * *', 'users.cron.send_email_job.send_email_cron'),
-]
-
 
 # Channel Layers configuration
 CHANNEL_LAYERS = {
@@ -174,12 +157,6 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'hta.wsgi.application'
 
-
-
-
-
-
-
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 10000,
@@ -188,19 +165,19 @@ REST_FRAMEWORK = {
         'rest_framework.filters.SearchFilter',
         'rest_framework.filters.OrderingFilter',
     ],
-
+    
     "DEFAULT_THROTTLE_CLASSES": [
         "rest_framework.throttling.AnonRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
         "anon": "10/min",
-    },    
+    },
 
     'DEFAULT_AUTHENTICATION_CLASSES': [
             'rest_framework_simplejwt.authentication.JWTAuthentication',
         ],
     'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticatedOrReadOnly', 
+        'rest_framework.permissions.IsAuthenticated', 
     ],
     'DEFAULT_RENDERER_CLASSES': [
         'rest_framework.renderers.JSONRenderer',
@@ -208,30 +185,33 @@ REST_FRAMEWORK = {
     ],
 }
 
+CORS_ALLOWED_ORIGINS = [
+    "https://bptap.health.go.ke",
+]
+CSRF_TRUSTED_ORIGINS = [
+    "https://bptap.health.go.ke",
+]
 # Database
 # https://docs.djangoproject.com/en/5.2/ref/settings/#databases
 
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+     'default': {
+         'ENGINE': 'django.db.backends.sqlite3',
+         'NAME': BASE_DIR / 'db.sqlite3',
+     }
 }
 
 
-
-
-
-# DATABASES = {
-#     'default': {
-#         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': os.getenv('DB_NAME'),
-#         'USER': os.getenv('DB_USER'),
-#         'PASSWORD': os.getenv('DB_PASSWORD'),
-#         'HOST': os.getenv('DB_HOST'),
-#         'PORT': os.getenv('DB_PORT'),
-#     }
-# }
+#DATABASES = {
+#    'default': {
+#       'ENGINE': 'django.db.backends.postgresql',
+#       'NAME': '*****',
+#       'USER': '****',
+#        'PASSWORD': '*******',
+#        'HOST': 'localhost',
+#        'PORT': 5432,
+#    }
+#}
 
 
 
@@ -259,15 +239,15 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Nairobi'
 
 USE_I18N = True
 
 USE_TZ = True
 
 
-
 AUTH_USER_MODEL = 'users.CustomUser'
+MAX_LOGIN_ATTEMPTS = 3
 
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/5.2/howto/static-files/
@@ -276,6 +256,8 @@ AUTH_USER_MODEL = 'users.CustomUser'
 
 # MEDIA_URL = '/media/'
 # MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+
+
 
 STATIC_URL = '/static/'
 
@@ -291,6 +273,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
 
+#REACT_APP_DIR = os.path.join(BASE_DIR, 'frontend')
+#STATICFILES_DIRS = [
+#    os.path.join(REACT_APP_DIR, 'build/static'),
+#]
+# Default primary key field type
+# https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-fld
+
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 #  jwt settings
 SIMPLE_JWT = {
@@ -341,18 +331,16 @@ CELERY_RESULT_SERIALIZER = 'json'
 CELERY_TIMEZONE = 'Africa/Nairobi'
 
 # routing for different queues. and tasks
-CELERY_TASK_ROUTES = {
-    'users.tasks.process_proposal_submission': {'queue': 'proposals'},
-    'users.tasks.process_file_upload': {'queue': 'files'},
-    'users.tasks.send_confirmation_email': {'queue': 'emails'},
-}
+# CELERY_TASK_ROUTES = {
+#     'users.tasks.process_proposal_submission': {'queue': 'proposals'},
+#     'users.tasks.process_file_upload': {'queue': 'files'},
+#     'users.tasks.send_confirmation_email': {'queue': 'emails'},
+# }
 
-# Worker configuration
-CELERY_WORKER_PREFETCH_MULTIPLIER = 1
-CELERY_TASK_ACKS_LATE = True
-CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
-
-
+# # Worker configuration
+# CELERY_WORKER_PREFETCH_MULTIPLIER = 1
+# CELERY_TASK_ACKS_LATE = True
+# CELERY_WORKER_MAX_TASKS_PER_CHILD = 1000
 
 
 #  email config
@@ -372,17 +360,10 @@ SUPPORT_EMAIL = config.get('SUPPORT_EMAIL')
 FRONTEND_URL = config.get('FRONTEND_URL')
 
 
-
-    
-
-
-
-
+# logging
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
-
-    # ────────────────────── FORMATTERS ──────────────────────
     'formatters': {
         'verbose': {
             'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
@@ -393,55 +374,33 @@ LOGGING = {
             'style': '{',
         },
     },
-
-    # ────────────────────── HANDLERS ───────────────────────
     'handlers': {
-        'django_file': {
+        'file': {
             'level': 'INFO',
             'class': 'logging.FileHandler',
-            'filename': os.path.join(settings.BASE_DIR, 'logs', 'django.log'),
+            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
             'formatter': 'verbose',
         },
-
-        #cron log
-        'email_cron_file': {
-            'level': 'INFO',
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(settings.BASE_DIR, 'logs', 'django_email_cron.log'),
-            'formatter': 'verbose',
-        },
-
         'console': {
             'level': 'DEBUG',
             'class': 'logging.StreamHandler',
             'formatter': 'simple',
         },
     },
-
-    # ────────────────────── LOGGERS ────────────────────────
+    'root': {
+        'handlers': ['console', 'file'],
+        'level': 'INFO',
+    },
     'loggers': {
         'users.tasks': {
-            'handlers': ['django_file', 'console'],
+            'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': False,
         },
         'celery': {
-            'handlers': ['django_file', 'console'],
+            'handlers': ['file', 'console'],
             'level': 'INFO',
             'propagate': False,
         },
-
-        #  Cron logger -------------------------------------------------
-        'users.cron.send_email_job': {
-            'handlers': ['email_cron_file', 'console'],  
-            'level': 'INFO',
-            'propagate': False,
-        },
-    },
-
-
-    'root': {
-        'handlers': ['django_file', 'console'],
-        'level': 'INFO',
     },
 }
