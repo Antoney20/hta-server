@@ -1124,7 +1124,16 @@ class MemberAdminAPIView(generics.RetrieveUpdateDestroyAPIView):
         if self.request.method in ('PATCH', 'PUT'):
             return MemberAdminSerializer
         return MemberListSerializer
-    
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        if  instance.user.is_superuser:
+            raise PermissionDenied(
+                "Staff or superuser accounts cannot be deleted."
+            )
+
+        return super().destroy(request, *args, **kwargs)
     
 class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]
