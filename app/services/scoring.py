@@ -13,12 +13,12 @@ User = get_user_model()
 logger = logging.getLogger(__name__)
 
 
-# ── Data shapes ───────────────────────────────────────────────────────────────
 
 @dataclass
 class CriteriaScore:
     criteria_name: str
     score_value: int
+    notes: Optional[str] = None
 
 
 @dataclass
@@ -30,6 +30,7 @@ class ReviewerStatus:
     score_count: int
     total_score: int
     criteria_scores: list[CriteriaScore] = field(default_factory=list)
+
 
 
 @dataclass
@@ -118,39 +119,51 @@ class ScoringReportService:
         reviewers = list(User.objects.filter(id__in=reviewer_ids))
 
         # 4. Score index: { intervention_id: { reviewer_id: { criteria_name: score_value } } }
-        score_index: dict[str, dict[int, dict[str, int]]] = {}
+        score_index: dict[
+                str,
+                dict[int, dict[str, dict[str, Optional[str]]]]
+            ] = {}
         scored_index: dict[str, str] = {} 
+        
+
+                
         # for s in (
         #     InterventionScore.objects
         #     .select_related("reviewer", "criteria")
         #     .filter(intervention__in=list(qs))
-        #     .order_by("created_at") 
+        #     .order_by("created_at")
         # ):
+        #     iid = str(s.intervention_id)   # ← assign iid here first
         #     (
         #         score_index
-        #         .setdefault(str(s.intervention_id), {})
+        #         .setdefault(iid, {})
         #         .setdefault(s.reviewer_id, {})
         #     )[s.criteria.criteria.strip()] = ScoringReportService._score_value(s.score)
-            
-        #     if iid not in scored_index:   
+
+        #     if iid not in scored_index:
         #         scored_index[iid] = s.created_at.isoformat()
-        
-                
+
         for s in (
             InterventionScore.objects
             .select_related("reviewer", "criteria")
             .filter(intervention__in=list(qs))
             .order_by("created_at")
         ):
-            iid = str(s.intervention_id)   # ← assign iid here first
+            iid = str(s.intervention_id)
+            cname = s.criteria.criteria.strip()
+
             (
                 score_index
                 .setdefault(iid, {})
                 .setdefault(s.reviewer_id, {})
-            )[s.criteria.criteria.strip()] = ScoringReportService._score_value(s.score)
+            )[cname] = {
+                "score_value": ScoringReportService._score_value(s.score),
+                "notes": s.comment.strip() if s.comment else None,
+            }
 
             if iid not in scored_index:
                 scored_index[iid] = s.created_at.isoformat()
+
 
         # 5. Build per-intervention reports — skip interventions with total_score == 0
         reports: list[InterventionReport] = []
@@ -166,10 +179,24 @@ class ScoringReportService:
 
             for r in reviewers:
                 r_criteria_map = iv_scores.get(r.id, {})
-                criteria_scores = [
-                    CriteriaScore(criteria_name=name, score_value=r_criteria_map.get(name, 0))
-                    for name in all_criteria_names
-                ]
+                # criteria_scores = [
+                #     CriteriaScore(criteria_name=name, score_value=r_criteria_map.get(name, 0))
+                #     for name in all_criteria_names
+                # ]
+                
+                criteria_scores = []
+
+                for name in all_criteria_names:
+                    entry = r_criteria_map.get(name, {})
+
+                    criteria_scores.append(
+                        CriteriaScore(
+                            criteria_name=name,
+                            score_value=entry.get("score_value", 0),
+                            notes=entry.get("notes"),
+                        )
+                    )
+                    
                 r_total = sum(cs.score_value for cs in criteria_scores)
                 total_score += r_total
                 scored_criteria.update(r_criteria_map.keys())
@@ -182,6 +209,7 @@ class ScoringReportService:
                     score_count=len(r_criteria_map),
                     total_score=r_total,
                     criteria_scores=criteria_scores,
+
                 )
                 reviewer_statuses.append(status)
                 if not r_criteria_map:

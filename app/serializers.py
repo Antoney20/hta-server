@@ -153,6 +153,7 @@ class InterventionScoreSerializer(serializers.ModelSerializer):
 
 class PublicProposalSerializer(serializers.ModelSerializer):
     date = serializers.SerializerMethodField()
+    justification = serializers.SerializerMethodField()  
 
     class Meta:
         model = InterventionProposal
@@ -162,6 +163,7 @@ class PublicProposalSerializer(serializers.ModelSerializer):
             "intervention_name",
             "intervention_type",
             "beneficiary",
+            "justification",  
             "expected_impact",
             "date",
         ]
@@ -173,7 +175,12 @@ class PublicProposalSerializer(serializers.ModelSerializer):
         if obj.submitted_at:
             return obj.submitted_at.strftime("%Y-%m-%d")
         return None
-    
+
+    def get_justification(self, obj):
+        """
+        Ensure a clean fallback instead of null/empty.
+        """
+        return obj.justification or "No justification provided"
     
     
 class DecisionTypeSerializer(serializers.ModelSerializer):
