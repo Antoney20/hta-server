@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import InterventionProposal
-from .models import CriteriaInformation, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import CriteriaInformation, DecisionType, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 
 
 class SelectionToolSerializer(serializers.ModelSerializer):
@@ -105,12 +105,19 @@ class CriteriaInformationCreateSerializer(serializers.ModelSerializer):
 
 
 class InterventionScoreCreateSerializer(serializers.ModelSerializer):
-    """Used for POST/PATCH — minimal fields, reviewer injected from request."""
     class Meta:
         model = InterventionScore
         fields = ["id", "intervention", "criteria", "score", "comment"]
         read_only_fields = ["id"]
 
+    def validate(self, attrs):
+        comment = (attrs.get("comment") or "").strip()
+        score = attrs.get("score")
+        if comment and not score:
+            raise serializers.ValidationError({
+                "score": "A score must be selected when a comment is provided."
+            })
+        return attrs
 
 class InterventionScoreSerializer(serializers.ModelSerializer):
     """Used for GET — enriched with reviewer + intervention details."""
@@ -127,7 +134,7 @@ class InterventionScoreSerializer(serializers.ModelSerializer):
             "reviewer_name", "reviewer_email",
             "intervention_name", "intervention_reference",
         ]
-        read_only_fields = fields  # everything is read-only on GET
+        read_only_fields = fields  
 
     def get_reviewer_name(self, obj) -> str:
         return  obj.reviewer.username
@@ -146,6 +153,7 @@ class InterventionScoreSerializer(serializers.ModelSerializer):
 
 class PublicProposalSerializer(serializers.ModelSerializer):
     date = serializers.SerializerMethodField()
+    justification = serializers.SerializerMethodField()  
 
     class Meta:
         model = InterventionProposal
@@ -155,7 +163,7 @@ class PublicProposalSerializer(serializers.ModelSerializer):
             "intervention_name",
             "intervention_type",
             "beneficiary",
-            "justification",
+            "justification",  
             "expected_impact",
             "date",
         ]
@@ -167,3 +175,81 @@ class PublicProposalSerializer(serializers.ModelSerializer):
         if obj.submitted_at:
             return obj.submitted_at.strftime("%Y-%m-%d")
         return None
+
+    def get_justification(self, obj):
+        """
+        Ensure a clean fallback instead of null/empty.
+        """
+        return obj.justification or "No justification provided"
+    
+    
+class DecisionTypeSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DecisionType
+        fields = ["id", "name", "description"]
+
+class DecisionTypeCreateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = DecisionType
+        fields = ["name", "description"]
+
+
+class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
+    reference_number = serializers.CharField(source="intervention.reference_number")
+    intervention_id = serializers.CharField(source="intervention.id")
+    intervention_name = serializers.CharField(source="intervention.intervention_name")
+    decision = DecisionTypeSerializer(read_only=True)
+    system_categories = serializers.SerializerMethodField()
+    is_scored = serializers.BooleanField(read_only=True)  # from annotation
+
+    class Meta:
+        model = InterventionStatusUpdate
+        fields = [
+            "id",
+            "reference_number",
+            "intervention_id",
+            "intervention_name",
+            "decision",
+            "decision_date",
+            "feedback",
+            "system_categories",
+            "is_scored",
+            "created_at",
+            "updated_at",
+        ]
+
+    def get_system_categories(self, obj):
+        return list(
+            obj.intervention.system_categories.values_list(
+                "system_category__name", flat=True
+            )
+        )
+        
+        
+
+class InterventionStatusUpdateWriteSerializer(serializers.ModelSerializer):
+    """Write — secretariat / admin only."""
+
+    class Meta:
+        model = InterventionStatusUpdate
+        fields = [
+            "intervention",
+            "decision",
+            "decision_date",
+            "feedback",
+            "additional_info",
+        ]
+
+    def validate(self, attrs):
+        # decision_date is required when a formal decision is set
+        if attrs.get("decision") and not attrs.get("decision_date"):
+            raise serializers.ValidationError(
+                {"decision_date": "A decision date is required when setting a decision."}
+            )
+        return attrs
+
+
+
+
+    
+    

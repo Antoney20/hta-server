@@ -105,13 +105,18 @@ cython_debug/
 
 db.sqlite3
 db.sqlite3
+db-local.sqlite3
 db.sqlite3-journal
 db-new.sqlite3
+
 db-new.sqlite3-journal
 
 
 
 
 config.json
+config_live.json
 live_settings.py
+
+
 

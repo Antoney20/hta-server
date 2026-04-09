@@ -115,25 +115,115 @@ class CriteriaInformation(models.Model):
 
     def __str__(self):
         return f"Criteria Info — {self.intervention}"    
-    
+ 
+
 class InterventionScore(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     reviewer = models.ForeignKey(User, on_delete=models.CASCADE)
-    intervention = models.ForeignKey(InterventionProposal, on_delete=models.CASCADE, related_name="scores" )
-    criteria = models.ForeignKey(SelectionTool, on_delete=models.CASCADE  )
+    intervention = models.ForeignKey(
+        InterventionProposal, on_delete=models.CASCADE, related_name="scores"
+    )
+    criteria = models.ForeignKey(SelectionTool, on_delete=models.CASCADE)
     score = models.JSONField(default=dict, blank=True)
     comment = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+ 
+    is_rescored = models.BooleanField(default=False)
+    rescored_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="rescored_scores",
+        help_text="The reviewer who applied the rescore.",
+    )
+
     class Meta:
         unique_together = ("reviewer", "intervention", "criteria")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["reviewer"]),
+            models.Index(fields=["intervention"]),
+            models.Index(fields=["criteria"]),
+            models.Index(fields=["created_at"]),
+        ]
     
-    
+    def __str__(self):
+        return f"{self.reviewer} — {self.intervention} — {self.criteria}"
+ 
+ 
+ 
+class DecisionType(models.Model):
+    """
+    save decision type
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+class InterventionStatusUpdate(models.Model):
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    intervention = models.ForeignKey(
+        InterventionProposal,
+        on_delete=models.CASCADE,
+        related_name="status_updates",
+    )
+
+    decision = models.ForeignKey(
+        DecisionType,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="status_updates",
+        help_text="Formal HTA decision once reached.",
+    )
+
+    decision_date = models.DateField(null=True, blank=True)
+
+    feedback = models.TextField(
+        blank=True,
+        help_text="Plain-language feedback visible to the submitter.",
+    )
+
+    additional_info = models.TextField(
+        blank=True,
+        help_text="More info supporting the decision.",
+    )
+
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name="intervention_status_updates",
+    )
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["intervention"], name="idx_status_intervention"),
+            models.Index(fields=["decision_date"], name="idx_status_decision_date"),
+        ]
+
+    def __str__(self):
+        return f"{self.intervention} — Status Update"
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
 auditlog.register(InterventionSystemCategory)
 auditlog.register(InterventionScore)
 auditlog.register(CriteriaInformation)
+auditlog.register(DecisionType)
+auditlog.register(InterventionStatusUpdate)

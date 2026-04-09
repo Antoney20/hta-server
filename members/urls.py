@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
+    AlertsView,
     AnnouncementViewSet,
     EventViewSet,
     ForumViewSet,
@@ -39,4 +40,5 @@ router.register(r'implementations', views.ImplementationTrackingViewSet, basenam
 
 urlpatterns = [
     path('proj/', include(router.urls)),
+    path("notifications/alerts/", AlertsView.as_view()),
 ]

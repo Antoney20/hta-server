@@ -1,6 +1,8 @@
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
+from rest_framework.request import Request
+from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework import serializers
 from django.db.models import Q, Prefetch, Count, Avg
@@ -12,6 +14,8 @@ from django.db import transaction
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 import logging
 
+from members.services.notification_service import NotificationService
+from members.services.task_service import TaskService
 from users.models import CustomUser, UserRole
 
 from .models import (
@@ -566,200 +570,61 @@ class TaskViewSet(viewsets.ModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
-        """Return tasks based on user role and filters"""
-        user = self.request.user
-        
-        # Base queryset
-        if (user.groups.filter(name__in=['admin', 'manager']).exists() or 
-            user.is_staff or user.is_superuser):
-            # Admins and managers can see all tasks
-            queryset = Task.objects.all()
-        else:
-            # Regular users see only their tasks (assigned to them or created by them)
-            queryset = Task.objects.filter(
-                Q(assigned_users=user) | Q(created_by=user)
-            ).distinct()
-        
-        # Filter by status if provided
-        status_filter = self.request.query_params.get('status', None)
-        if status_filter:
-            queryset = queryset.filter(status=status_filter)
-        
-        # Filter by priority if provided
-        priority_filter = self.request.query_params.get('priority', None)
-        if priority_filter:
-            queryset = queryset.filter(priority=priority_filter)
-        
-        # Filter by due date
-        due_filter = self.request.query_params.get('due', None)
-        if due_filter:
-            today = timezone.now().date()
-            if due_filter == 'today':
-                queryset = queryset.filter(due_date=today)
-            elif due_filter == 'overdue':
-                queryset = queryset.filter(
-                    due_date__lt=today, 
-                    status__in=[TaskStatus.NEW, TaskStatus.IN_PROGRESS, TaskStatus.REVIEW]
-                )
-            elif due_filter == 'upcoming':
-                queryset = queryset.filter(due_date__gt=today)
-            elif due_filter == 'no_date':
-                queryset = queryset.filter(due_date__isnull=True)
-        
-        return queryset.select_related('created_by').prefetch_related(
-            'assignments__user', 'assignments__assigned_by'
-        )
+        params = {k: self.request.query_params.get(k) for k in ("status", "priority", "due")}
+        return TaskService.get_queryset(self.request.user, params)
 
     def perform_create(self, serializer):
-        """Ensure created_by is set to the current user"""
-        serializer.save(created_by=self.request.user)
+        serializer.save(created_by=self.request.user)  # ← was missing
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
-        """Mark a task as completed"""
-        task = self.get_object()
-        
-        # Check if user can complete this task
-        if not (task.created_by == request.user or 
-                task.assigned_users.filter(id=request.user.id).exists() or
-                request.user.groups.filter(name__in=['admin', 'manager']).exists() or 
-                request.user.is_staff or request.user.is_superuser):
-            return Response(
-                {'error': 'You do not have permission to complete this task'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        task.status = TaskStatus.COMPLETED
-        task.completed_at = timezone.now()
-        task.save()
-        
-        serializer = self.get_serializer(task)
-        return Response(serializer.data)
+        task = TaskService.complete_task(request.user, self.get_object())
+        return Response(self.get_serializer(task).data)
 
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):
-        """Reopen a completed task"""
-        task = self.get_object()
-        
-        # Check if user can reopen this task
-        if not (task.created_by == request.user or 
-                task.assigned_users.filter(id=request.user.id).exists() or
-                request.user.groups.filter(name__in=['admin', 'manager']).exists() or 
-                request.user.is_staff or request.user.is_superuser):
-            return Response(
-                {'error': 'You do not have permission to reopen this task'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
-        task.status = TaskStatus.NEW
-        task.completed_at = None
-        task.save()
-        
-        serializer = self.get_serializer(task)
-        return Response(serializer.data)
+        task = TaskService.reopen_task(request.user, self.get_object())
+        return Response(self.get_serializer(task).data)
 
-    @action(detail=False, methods=['get'])
-    def my_tasks(self, request):
-        """Get current user's tasks"""
-        tasks = Task.objects.filter(
-            Q(assigned_users=request.user) | Q(created_by=request.user)
-        ).distinct().select_related('created_by').prefetch_related(
-            'assignments__user', 'assignments__assigned_by'
-        )
-        
-        # Apply same filters as get_queryset
-        status_filter = request.query_params.get('status', None)
-        if status_filter:
-            tasks = tasks.filter(status=status_filter)
-            
-        serializer = self.get_serializer(tasks, many=True)
-        return Response(serializer.data)
-
-    @action(detail=False, methods=['get'])
-    def completed_tasks(self, request):
-        """Get completed tasks"""
-        tasks = self.get_queryset().filter(status=TaskStatus.COMPLETED)
-        serializer = self.get_serializer(tasks, many=True)
-        return Response(serializer.data)
-
-    @action(detail=True, methods=['post'])
+    @action(detail=True, methods=["post"])
     def assign_users(self, request, pk=None):
-        """Assign multiple users to a task (users with manager/admin groups only)"""
-        # Check if user has permission to assign tasks (using groups)
-        if not (request.user.groups.filter(name__in=['admin', 'manager']).exists() or 
-                request.user.is_staff or request.user.is_superuser):
-            return Response(
-                {'error': 'Only users with admin or manager role can assign tasks to users'}, 
-                status=status.HTTP_403_FORBIDDEN
-            )
-        
         task = self.get_object()
-        user_ids = request.data.get('user_ids', [])
-        
-        if not user_ids:
-            return Response(
-                {'error': 'user_ids list is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        # Clear existing assignments
-        task.assignments.all().delete()
-        
-        assigned_users = []
-        for user_id in user_ids:
-            try:
-                user = CustomUser.objects.get(id=user_id, status='active')
-                TaskAssignment.objects.create(
-                    task=task,
-                    user=user,
-                    assigned_by=request.user
-                )
-                assigned_users.append(user.username)
-            except CustomUser.DoesNotExist:
-                continue
-        
-        serializer = self.get_serializer(task)
+        assigned_to = TaskService.assign_users(request.user, task, request.data.get("user_ids", []))
         return Response({
-            'task': serializer.data,
-            'assigned_to': assigned_users,
-            'message': f'Task assigned to {len(assigned_users)} users'
+            "task": self.get_serializer(task).data,
+            "assigned_to": assigned_to,
+            "message": f"Task assigned to {len(assigned_to)} users",
         })
 
-    @action(detail=True, methods=['patch'])
+    @action(detail=True, methods=["patch"])
     def update_progress(self, request, pk=None):
-        """Update task progress"""
-        task = self.get_object()
+        task = TaskService.update_progress(request.user, self.get_object(), request.data.get("progress"))
+        return Response(self.get_serializer(task).data)
 
-        if not (task.created_by == request.user or 
-                task.assigned_users.filter(id=request.user.id).exists() or
-                request.user.groups.filter(name__in=['admin', 'manager']).exists() or 
-                request.user.is_staff or request.user.is_superuser):
-            return Response(
-                {'error': 'You do not have permission to update this task'}, 
-                status=status.HTTP_403_FORBIDDEN
+    @action(detail=False, methods=["get"])
+    def my_tasks(self, request):
+        # Always scope to the requesting user's own tasks, regardless of role.
+        # get_queryset() returns ALL tasks for admins, so we filter explicitly here.
+        qs = (
+            Task.objects.filter(
+                Q(assigned_users=request.user) | Q(created_by=request.user)
             )
-        
-        progress = request.data.get('progress')
-        if progress is None or not (0 <= progress <= 100):
-            return Response(
-                {'error': 'Progress must be between 0 and 100'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-        
-        task.progress = progress
-        
-        # Auto-complete task if progress reaches 100%
-        if progress == 100:
-            task.status = TaskStatus.COMPLETED
-            task.completed_at = timezone.now()
-        
-        task.save()
-        
-        serializer = self.get_serializer(task)
-        return Response(serializer.data)
+            .distinct()
+            .select_related("created_by")
+            .prefetch_related("assignments__user", "assignments__assigned_by")
+        )
+        if s := request.query_params.get("status"):
+            qs = qs.filter(status=s)
+        return Response(self.get_serializer(qs, many=True).data)
 
+    @action(detail=False, methods=["get"])
+    def completed_tasks(self, request):
+        qs = self.get_queryset().filter(status=TaskStatus.COMPLETED)
+        return Response(self.get_serializer(qs, many=True).data)
 
-
+    @action(detail=False, methods=["get"])
+    def stats(self, request):
+        return Response(TaskService.stats(request.user))
 
 class ForumViewSet(viewsets.ModelViewSet):
     queryset = Channel.objects.all()
@@ -1769,3 +1634,18 @@ class ImplementationTrackingViewSet(viewsets.ModelViewSet):
         serializer = self.get_serializer(implementation)
         return Response(serializer.data)
 
+
+
+
+class AlertsView(APIView):
+    permission_classes = [IsAuthenticated]
+ 
+    def get(self, request: Request) -> Response:
+        alerts = NotificationService.get_alerts(request.user)
+        return Response(
+            {
+                "count": len(alerts),
+                "alerts": alerts,
+            }
+        )
+ 

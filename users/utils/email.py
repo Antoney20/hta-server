@@ -437,3 +437,63 @@ def send_rejection_email(user):
         email_log.mark_failed(exc)
         logger.error(f" Failed to send rejection email to {recipient}: {exc}")
         return False
+
+
+
+
+
+
+def send_security_alert_email(user, request=None):
+    """
+    Sends security alert after multiple failed login attempts
+    and logs email activity.
+    """
+
+    subject = "Security Alert: Multiple Failed Login Attempts"
+
+    context = {
+        "user_name": user.first_name or user.username,
+        "current_year": timezone.now().year,
+    }
+
+    template_name = "emails/security/login_attempt_alert.html"
+    html_content = render_to_string(template_name, context)
+
+    email_log = EmailLog.objects.create(
+        user=user,
+        email=user.email,
+        subject=subject,
+        template=template_name,
+        status=EmailLog.Status.PENDING,
+        sent_at=None,
+        metadata={
+            "event": "failed_login_attempts",
+            "login_attempts": user.login_attempts,
+            "ip_address": request.META.get("REMOTE_ADDR") if request else None,
+        },
+    )
+
+    try:
+        email = EmailMultiAlternatives(
+            subject=subject,
+            body="Security alert notification",
+            from_email=settings.DEFAULT_FROM_EMAIL,
+            to=[user.email],
+        )
+
+        email.attach_alternative(html_content, "text/html")
+        email.send()
+
+        email_log.status = EmailLog.Status.SENT
+        email_log.sent_at = timezone.now()
+        email_log.error_message = None
+        email_log.save(update_fields=["status", "sent_at", "error_message"])
+
+        return True
+
+    except Exception as e:
+        email_log.status = EmailLog.Status.FAILED
+        email_log.error_message = str(e)
+        email_log.save(update_fields=["status", "error_message"])
+
+        return False
