@@ -848,6 +848,8 @@ class FeedbackCategoryViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
  
  
 
+
+
 class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet):
     queryset = FeedbackEmailLog.objects.none()
     permission_classes = [permissions.IsAuthenticated, IsAdmin]
@@ -857,11 +859,27 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         return (
             FeedbackEmailLog.objects
             .select_related("intervention", "category", "sent_by")
+            .prefetch_related(
+                "intervention__system_categories__system_category",
+                "intervention__status_updates__decision",
+            )
             .order_by("-created_at")
         )
  
     def list(self, request, *args, **kwargs):
-        return _ok(FeedbackEmailLogSerializer(self._qs(), many=True).data)
+        qs = self._qs()
+        # optional filters
+        if s := request.query_params.get("status"):
+            qs = qs.filter(status=s)
+        if cid := request.query_params.get("category"):
+            qs = qs.filter(category_id=cid)
+        if iid := request.query_params.get("intervention"):
+            qs = qs.filter(intervention_id=iid)
+        if date_from := request.query_params.get("date_from"):
+            qs = qs.filter(created_at__date__gte=date_from)
+        if date_to := request.query_params.get("date_to"):
+            qs = qs.filter(created_at__date__lte=date_to)
+        return _ok(FeedbackEmailLogSerializer(qs, many=True).data)
  
     def retrieve(self, request, *args, **kwargs):
         try:
@@ -875,44 +893,35 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         iid = request.query_params.get("intervention")
         if not iid:
             return _err("'intervention' query param is required.")
-        return _ok(FeedbackEmailLogSerializer(
-            self._qs().filter(intervention_id=iid), many=True
-        ).data)
+        return _ok(FeedbackEmailLogSerializer(self._qs().filter(intervention_id=iid), many=True).data)
  
     @action(detail=False, methods=["get"], url_path="by-category")
     def by_category(self, request):
         cid = request.query_params.get("category")
         if not cid:
             return _err("'category' query param is required.")
-        return _ok(FeedbackEmailLogSerializer(
-            self._qs().filter(category_id=cid), many=True
-        ).data)
+        return _ok(FeedbackEmailLogSerializer(self._qs().filter(category_id=cid), many=True).data)
  
-   
+
     @action(detail=False, methods=["post"], url_path="send")
     def send_email(self, request):
         from users.models import InterventionProposal
-        from core.emails.feedback import send_feedback_email
+        
  
         iid = request.data.get("intervention")
         cid = request.data.get("category")
-        if not iid:
-            return _err("'intervention' is required.")
-        if not cid:
-            return _err("'category' is required.")
+        if not iid: return _err("'intervention' is required.")
+        if not cid: return _err("'category' is required.")
  
         intervention, err = _get_or_404(InterventionProposal, pk=iid)
-        if err:
-            return err
+        if err: return err
         category, err = _get_or_404(FeedbackCategory, pk=cid, is_active=True)
-        if err:
-            return _err("Feedback category not found or inactive.", 404)
+        if err: return _err("Feedback category not found or inactive.", 404)
  
         su = None
         if su_id := request.data.get("status_update"):
             su, err = _get_or_404(InterventionStatusUpdate, pk=su_id, intervention=intervention)
-            if err:
-                return _err("Status update not found for this intervention.", 404)
+            if err: return _err("Status update not found for this intervention.", 404)
  
         ok = send_feedback_email(
             intervention=intervention, category=category,
@@ -925,56 +934,58 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         log = self._qs().filter(intervention=intervention, category=category).first()
         return _ok(FeedbackEmailLogSerializer(log).data if log else None, "Email sent successfully.")
  
-
+    # ── Resend ────────────────────────────────────────────────────
+    @action(detail=True, methods=["post"], url_path="resend")
+    def resend_email(self, request, pk=None):
+        """Re-send an existing log entry. Creates a fresh log — does not mutate the original."""
+        ok, message = FeedbackService.resend(log_id=pk, sent_by=request.user)
+        if not ok:
+            return _err(message, 400)
+        log = self._qs().filter(
+            intervention_id=FeedbackEmailLog.objects.get(pk=pk).intervention_id
+        ).first()
+        return _ok(FeedbackEmailLogSerializer(log).data if log else None, message)
+ 
+    # ── Delete log ────────────────────────────────────────────────
+    @action(detail=True, methods=["delete"], url_path="delete")
+    def delete_log(self, request, pk=None):
+        instance, err = _get_or_404(FeedbackEmailLog, pk=pk)
+        if err: return err
+        instance.delete()
+        FeedbackService.invalidate()
+        return _ok(None, "Email log deleted.")
+ 
+    # ── Bulk send ─────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-send")
     def bulk_send(self, request):
-        """
-        Send one feedback category to multiple interventions.
- 
-        Body:
-            category          (UUID, required)
-            intervention_ids  (list[UUID], required, max 100)
-        """
         cid  = request.data.get("category")
         iids = request.data.get("intervention_ids", [])
- 
-        if not cid:
-            return _err("'category' is required.")
-        if not iids or not isinstance(iids, list):
-            return _err("'intervention_ids' must be a non-empty list.")
-        if len(iids) > 100:
-            return _err("Maximum 100 interventions per bulk send.")
+        if not cid: return _err("'category' is required.")
+        if not iids or not isinstance(iids, list): return _err("'intervention_ids' must be a non-empty list.")
+        if len(iids) > 100: return _err("Maximum 100 interventions per bulk send.")
  
         result = FeedbackService.bulk_send(
-            intervention_ids=iids,
-            category_id=cid,
-            sent_by=request.user,
+            intervention_ids=iids, category_id=cid, sent_by=request.user,
         )
- 
         return Response(
             {
                 "success": result.success,
                 "message": f"Sent {result.sent_count}/{result.total}. Failed: {result.failed_count}.",
                 "data": {
-                    "total":        result.total,
-                    "sent_count":   result.sent_count,
-                    "failed_count": result.failed_count,
-                    "sent":         result.sent,
-                    "failed":       result.failed,
-                    "errors":       result.errors,
+                    "total": result.total, "sent_count": result.sent_count,
+                    "failed_count": result.failed_count, "sent": result.sent,
+                    "failed": result.failed, "errors": result.errors,
                 },
             },
             status=status.HTTP_200_OK if result.success else status.HTTP_207_MULTI_STATUS,
         )
- 
 
     @action(detail=False, methods=["get"], url_path="intervention-statuses")
     def intervention_statuses(self, request):
-        """
-        All interventions enriched with scoring + discussion status.
-        Cached 30 min. Invalidated on every send.
-        """
         from dataclasses import asdict
-        return _ok([asdict(s) for s in FeedbackService.get_all_statuses()])    
-        
-        
+        date_from = request.query_params.get("date_from")
+        date_to   = request.query_params.get("date_to")
+        statuses  = FeedbackService.get_all_statuses(date_from=date_from, date_to=date_to)
+        return _ok([asdict(s) for s in statuses])
+
+    

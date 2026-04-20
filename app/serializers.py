@@ -44,7 +44,7 @@ class CriteriaInformationSerializer(serializers.ModelSerializer):
     )
     system_category_name = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(
-        source="created_by.get_full_name", read_only=True
+        source="created_by.get_username", read_only=True
     )
  
     class Meta:
@@ -268,37 +268,51 @@ class FeedbackCategoryWriteSerializer(serializers.ModelSerializer):
 # ─────────────────────────────────────────────
 #  FeedbackEmailLog
 # ─────────────────────────────────────────────
- 
 class FeedbackEmailLogSerializer(serializers.ModelSerializer):
-    """Read serializer — full detail with nested labels + decision from latest status update."""
+    """
+    Full read serializer.
+    Adds: category_name, sent_by_name, intervention fields,
+          system_categories (names only), is_discussed, decision, decision_date.
+    """
  
     category_name     = serializers.CharField(source="category.name",                  read_only=True)
     sent_by_name      = serializers.SerializerMethodField()
     intervention_id   = serializers.UUIDField(source="intervention.id",                read_only=True)
     intervention_name = serializers.CharField(source="intervention.intervention_name", read_only=True)
     reference_number  = serializers.CharField(source="intervention.reference_number",  read_only=True)
+    submitted_at      = serializers.DateTimeField(source="intervention.submitted_at",  read_only=True)
  
-    # decision info pulled from the latest InterventionStatusUpdate
-    decision     = serializers.SerializerMethodField()
-    decision_date = serializers.SerializerMethodField()
+    # system category names — prefetch "intervention__system_categories__system_category" in the view
+    system_categories = serializers.SerializerMethodField()
+ 
+    # decision from latest InterventionStatusUpdate
     is_discussed  = serializers.SerializerMethodField()
+    decision      = serializers.SerializerMethodField()
+    decision_date = serializers.SerializerMethodField()
  
     class Meta:
         model  = FeedbackEmailLog
         fields = [
             "id",
+            # intervention
             "intervention_id",
             "intervention_name",
             "reference_number",
+            "submitted_at",
+            "system_categories",
+            # category
             "category",
             "category_name",
+            # decision
             "is_discussed",
             "decision",
             "decision_date",
+            # email snapshot
             "subject_sent",
             "message_sent",
             "recipient",
             "sender",
+            # tracking
             "status",
             "error_message",
             "retry_count",
@@ -312,19 +326,24 @@ class FeedbackEmailLogSerializer(serializers.ModelSerializer):
  
     def get_sent_by_name(self, obj) -> str | None:
         if obj.sent_by:
-            return obj.sent_by.get_full_name() or obj.sent_by.username
+            return obj.sent_by.get_username() or obj.sent_by.username
         return None
  
+    def get_system_categories(self, obj) -> list[str]:
+        # uses prefetched data if available — no extra query
+        return [
+            isc.system_category.name
+            for isc in obj.intervention.system_categories.all()
+        ]
+ 
     def _latest_su(self, obj):
-        """Fetch and cache the latest status update per log instance to avoid N+1."""
         if not hasattr(obj, "_cached_su"):
-            su = (
+            obj._cached_su = (
                 obj.intervention.status_updates
                 .select_related("decision")
                 .order_by("-created_at")
                 .first()
             )
-            obj._cached_su = su
         return obj._cached_su
  
     def get_is_discussed(self, obj) -> bool:
@@ -337,6 +356,6 @@ class FeedbackEmailLogSerializer(serializers.ModelSerializer):
     def get_decision_date(self, obj) -> str | None:
         su = self._latest_su(obj)
         return su.decision_date.strftime("%d %B %Y") if su and su.decision_date else None
- 
+  
 
 
