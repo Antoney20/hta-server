@@ -6,6 +6,7 @@ from typing import Optional
 
 from django.core.cache import cache
 
+from app.core.emails.feedback import send_feedback_email
 from app.models import InterventionSystemCategory
 
 logger = logging.getLogger(__name__)
@@ -32,25 +33,66 @@ class InterventionFeedbackStatus:
     decision_date:           Optional[str]
     feedback:                Optional[str]
     latest_status_update_id: Optional[str]
- 
- 
+
+
+@dataclass
+class SendResult:
+    """Result for a single email send attempt."""
+    intervention_id: str
+    success:         bool
+    error:           Optional[str] = None
+
+
 @dataclass
 class BulkSendResult:
-    success:      bool
+    """Aggregated result across one or more send attempts."""
+    total:        int = 0
     sent:         list[str] = field(default_factory=list)
     failed:       list[str] = field(default_factory=list)
     errors:       dict[str, str] = field(default_factory=dict)
-    total:        int = 0
     sent_count:   int = 0
     failed_count: int = 0
- 
- 
+
+    @property
+    def success(self) -> bool:
+        """All attempted sends succeeded."""
+        return self.sent_count > 0 and self.failed_count == 0
+
+    @property
+    def partial(self) -> bool:
+        """Some succeeded, some failed."""
+        return self.sent_count > 0 and self.failed_count > 0
+
+    @property
+    def all_failed(self) -> bool:
+        """Every attempt failed."""
+        return self.sent_count == 0 and self.failed_count > 0
+
+    @property
+    def summary(self) -> str:
+        if self.success:
+            return f"All {self.sent_count} email(s) sent successfully."
+        if self.partial:
+            return f"Partially sent: {self.sent_count}/{self.total}. {self.failed_count} failed."
+        return f"All {self.total} email(s) failed to send."
+
+    def record(self, result: SendResult) -> None:
+        """Register a single SendResult into this aggregate."""
+        if result.success:
+            self.sent.append(result.intervention_id)
+            self.sent_count += 1
+        else:
+            self.failed.append(result.intervention_id)
+            self.errors[result.intervention_id] = result.error or "Unknown error"
+            self.failed_count += 1
+
+
 class FeedbackService:
- 
+
     @staticmethod
     def invalidate():
         cache.delete(CACHE_KEY)
- 
+
     @classmethod
     def _cached_statuses(cls) -> list[InterventionFeedbackStatus]:
         hit = cache.get(CACHE_KEY)
@@ -59,7 +101,7 @@ class FeedbackService:
         result = cls._build_statuses()
         cache.set(CACHE_KEY, result, CACHE_TIMEOUT)
         return result
- 
+
     @staticmethod
     def _build_statuses() -> list[InterventionFeedbackStatus]:
         from users.models import InterventionProposal
@@ -68,11 +110,7 @@ class FeedbackService:
             FeedbackEmailLog, InterventionSystemCategory,
         )
         from django.db.models import Count, Max
- 
-        # ── score totals ──────────────────────────────────────────────
-        # InterventionScore.score is a JSONField:
-        #   {"score_value": 3, "tool_id": "...", "criteria_label": "..."}
-        # Sum() on a JSONField crashes — extract score_value in Python instead.
+
         _raw_scores = (
             InterventionScore.objects
             .values("intervention_id", "score")
@@ -81,7 +119,6 @@ class FeedbackService:
         for row in _raw_scores:
             iid = str(row["intervention_id"])
             val = row["score"]
-            # score may be a dict or already-parsed object
             if isinstance(val, dict):
                 sv = int(val.get("score_value", 0) or 0)
             elif isinstance(val, (int, float)):
@@ -89,7 +126,7 @@ class FeedbackService:
             else:
                 sv = 0
             score_map[iid] = score_map.get(iid, 0) + sv
- 
+
         # ── latest status update per intervention ─────────────────────
         latest_status: dict[str, object] = {}
         for su in (
@@ -100,7 +137,7 @@ class FeedbackService:
             iid = str(su.intervention_id)
             if iid not in latest_status:
                 latest_status[iid] = su
- 
+
         # ── feedback log aggregates ───────────────────────────────────
         log_agg: dict[str, dict] = {}
         for row in (
@@ -109,10 +146,10 @@ class FeedbackService:
             .annotate(count=Count("id"), last_sent=Max("created_at"))
         ):
             log_agg[str(row["intervention_id"])] = {
-                "count":     int(row["count"]),   # ensure int
+                "count":     int(row["count"]),
                 "last_sent": row["last_sent"].isoformat() if row["last_sent"] else None,
             }
- 
+
         # ── system category names per intervention ────────────────────
         cat_map: dict[str, list[str]] = {}
         for isc in (
@@ -123,14 +160,14 @@ class FeedbackService:
             cat_map.setdefault(str(isc.intervention_id), []).append(
                 isc.system_category.name
             )
- 
+
         # ── proposals ─────────────────────────────────────────────────
         proposals = (
             InterventionProposal.objects
             .only("id", "intervention_name", "reference_number", "email", "submitted_at")
             .order_by("reference_number")
         )
- 
+
         results: list[InterventionFeedbackStatus] = []
         for iv in proposals:
             iid      = str(iv.id)
@@ -138,7 +175,7 @@ class FeedbackService:
             total_sc = score_map.get(iid, 0)
             logs     = log_agg.get(iid, {})
             submitted = getattr(iv, "submitted_at", None)
- 
+
             results.append(InterventionFeedbackStatus(
                 intervention_id=iid,
                 intervention_name=getattr(iv, "intervention_name", str(iv)),
@@ -150,16 +187,16 @@ class FeedbackService:
                 feedback_sent_count=logs.get("count", 0),
                 last_feedback_sent_at=logs.get("last_sent"),
                 is_scored=total_sc > 0,
-                total_score=total_sc,          # already int
+                total_score=total_sc,
                 is_discussed=su is not None,
                 decision=str(su.decision) if su and su.decision else None,
                 decision_date=su.decision_date.strftime("%d %B %Y") if su and su.decision_date else None,
                 feedback=su.feedback or None if su else None,
                 latest_status_update_id=str(su.id) if su else None,
             ))
- 
+
         return results
- 
+
     @classmethod
     def get_all_statuses(
         cls,
@@ -172,14 +209,78 @@ class FeedbackService:
         if date_to:
             statuses = [s for s in statuses if s.submitted_at and s.submitted_at <= date_to + "T23:59:59"]
         return statuses
- 
+
     @classmethod
     def get_status(cls, intervention_id: str) -> Optional[InterventionFeedbackStatus]:
         return next(
             (s for s in cls._cached_statuses() if s.intervention_id == intervention_id),
             None,
         )
- 
+
+    # ── core single send ──────────────────────────────────────────────
+    @classmethod
+    def _send_one(
+        cls,
+        iid: str,
+        proposals: dict,
+        latest_su: dict,
+        category,
+        sent_by=None,
+    ) -> SendResult:
+        """Attempt to send feedback email for a single intervention. Never raises."""
+        iv = proposals.get(iid)
+        if not iv:
+            return SendResult(iid, success=False, error="Intervention not found")
+        if not getattr(iv, "email", None):
+            return SendResult(iid, success=False, error="No email address")
+        try:
+            ok = send_feedback_email(
+                intervention=iv,
+                category=category,
+                status_update=latest_su.get(iid),
+                sent_by=sent_by,
+            )
+            if ok:
+                return SendResult(iid, success=True)
+            return SendResult(iid, success=False, error="Send failed — see email log")
+        except Exception as exc:
+            logger.exception("Unexpected error sending feedback email for %s", iid)
+            return SendResult(iid, success=False, error=str(exc))
+
+    # ── public: single send ───────────────────────────────────────────
+    @classmethod
+    def send(
+        cls,
+        intervention_id: str,
+        category_id: str,
+        sent_by=None,
+    ) -> SendResult:
+        from users.models import InterventionProposal
+        from app.models import FeedbackCategory, InterventionStatusUpdate
+
+        try:
+            category = FeedbackCategory.objects.get(pk=category_id, is_active=True)
+        except FeedbackCategory.DoesNotExist:
+            return SendResult(intervention_id, success=False, error="Category not found or inactive")
+
+        proposals = {
+            str(iv.id): iv
+            for iv in InterventionProposal.objects.filter(pk=intervention_id)
+        }
+
+        latest_su: dict[str, object] = {}
+        for su in (
+            InterventionStatusUpdate.objects
+            .filter(intervention_id=intervention_id)
+            .select_related("decision")
+            .order_by("-created_at")[:1]
+        ):
+            latest_su[str(su.intervention_id)] = su
+
+        result = cls._send_one(intervention_id, proposals, latest_su, category, sent_by)
+        cls.invalidate()
+        return result
+
     @classmethod
     def bulk_send(
         cls,
@@ -189,20 +290,16 @@ class FeedbackService:
     ) -> BulkSendResult:
         from users.models import InterventionProposal
         from app.models import FeedbackCategory, InterventionStatusUpdate
-        from core.emails.feedback import send_feedback_email
- 
-        result = BulkSendResult(total=len(intervention_ids))
- 
+
+        aggregate = BulkSendResult(total=len(intervention_ids))
+
         try:
             category = FeedbackCategory.objects.get(pk=category_id, is_active=True)
         except FeedbackCategory.DoesNotExist:
-            result.success = False
             for iid in intervention_ids:
-                result.failed.append(iid)
-                result.errors[iid] = "Category not found or inactive"
-            result.failed_count = len(result.failed)
-            return result
- 
+                aggregate.record(SendResult(iid, success=False, error="Category not found or inactive"))
+            return aggregate
+
         latest_su: dict[str, object] = {}
         for su in (
             InterventionStatusUpdate.objects
@@ -213,39 +310,24 @@ class FeedbackService:
             iid = str(su.intervention_id)
             if iid not in latest_su:
                 latest_su[iid] = su
- 
+
         proposals = {
             str(iv.id): iv
             for iv in InterventionProposal.objects.filter(pk__in=intervention_ids)
         }
- 
+
         for iid in intervention_ids:
-            iv = proposals.get(iid)
-            if not iv:
-                result.failed.append(iid); result.errors[iid] = "Intervention not found"; continue
-            if not getattr(iv, "email", None):
-                result.failed.append(iid); result.errors[iid] = "No email address"; continue
-            ok = send_feedback_email(
-                intervention=iv, category=category,
-                status_update=latest_su.get(iid), sent_by=sent_by,
+            aggregate.record(
+                cls._send_one(iid, proposals, latest_su, category, sent_by)
             )
-            if ok:
-                result.sent.append(iid)
-            else:
-                result.failed.append(iid)
-                result.errors[iid] = "Send failed — see email log"
- 
-        result.sent_count   = len(result.sent)
-        result.failed_count = len(result.failed)
-        result.success      = result.failed_count == 0
+
         cls.invalidate()
-        return result
- 
+        return aggregate
+
     @classmethod
-    def resend(cls, log_id: str, sent_by=None) -> tuple[bool, str]:
+    def resend(cls, log_id: str, sent_by=None) -> SendResult:
         from app.models import FeedbackEmailLog
-        from core.emails.feedback import send_feedback_email
- 
+
         try:
             log = (
                 FeedbackEmailLog.objects
@@ -253,15 +335,15 @@ class FeedbackService:
                 .get(pk=log_id)
             )
         except FeedbackEmailLog.DoesNotExist:
-            return False, "Email log not found."
- 
+            return SendResult(log_id, success=False, error="Email log not found")
+
         if not log.category.is_active:
-            return False, "Category is inactive — cannot resend."
- 
-        ok = send_feedback_email(
-            intervention=log.intervention,
-            category=log.category,
-            sent_by=sent_by,
-        )
+            return SendResult(str(log.intervention_id), success=False, error="Category is inactive — cannot resend")
+
+        iid = str(log.intervention_id)
+        proposals  = {iid: log.intervention}
+        latest_su  = {}  # resend does not re-attach a status update
+
+        result = cls._send_one(iid, proposals, latest_su, log.category, sent_by)
         cls.invalidate()
-        return (True, "Email resent successfully.") if ok else (False, "Resend failed — check logs.")
+        return result

@@ -283,7 +283,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-fld
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-ORG_NAME = "Benefits Package and Tariffs Advisory Panel"
+ORG_NAME = "BPTAP"
 #  jwt settings
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=2),

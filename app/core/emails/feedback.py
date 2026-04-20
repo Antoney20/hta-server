@@ -36,7 +36,7 @@ def _build_context(intervention, category, status_update=None) -> dict:
         "feedback":        feedback,
         "category_name":   category.name,
         "subject":         category.subject,
-        "bptap":        getattr(settings, "ORG_NAME", "Benefits Package and Tariffs Advisory Panel"),
+        "bptap":        getattr(settings, "ORG_NAME", "BPTAP"),
         "bptap_email":       getattr(settings, "DEFAULT_FROM_EMAIL", "hbtap@uonbi.ac.ke" ),
         "current_year":    timezone.now().year,
     }
