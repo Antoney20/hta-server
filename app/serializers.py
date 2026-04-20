@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import InterventionProposal
-from .models import CriteriaInformation, DecisionType, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 
 
 class SelectionToolSerializer(serializers.ModelSerializer):
@@ -251,5 +251,92 @@ class InterventionStatusUpdateWriteSerializer(serializers.ModelSerializer):
 
 
 
-    
-    
+
+class FeedbackCategorySerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = FeedbackCategory
+        fields = ["id", "name", "description", "subject", "template", "is_active", "created_at", "updated_at"]
+        read_only_fields = ["id", "created_at", "updated_at"]
+ 
+ 
+class FeedbackCategoryWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = FeedbackCategory
+        fields = ["name", "description", "subject", "template", "is_active"]
+ 
+ 
+# ─────────────────────────────────────────────
+#  FeedbackEmailLog
+# ─────────────────────────────────────────────
+ 
+class FeedbackEmailLogSerializer(serializers.ModelSerializer):
+    """Read serializer — full detail with nested labels + decision from latest status update."""
+ 
+    category_name     = serializers.CharField(source="category.name",                  read_only=True)
+    sent_by_name      = serializers.SerializerMethodField()
+    intervention_id   = serializers.UUIDField(source="intervention.id",                read_only=True)
+    intervention_name = serializers.CharField(source="intervention.intervention_name", read_only=True)
+    reference_number  = serializers.CharField(source="intervention.reference_number",  read_only=True)
+ 
+    # decision info pulled from the latest InterventionStatusUpdate
+    decision     = serializers.SerializerMethodField()
+    decision_date = serializers.SerializerMethodField()
+    is_discussed  = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = FeedbackEmailLog
+        fields = [
+            "id",
+            "intervention_id",
+            "intervention_name",
+            "reference_number",
+            "category",
+            "category_name",
+            "is_discussed",
+            "decision",
+            "decision_date",
+            "subject_sent",
+            "message_sent",
+            "recipient",
+            "sender",
+            "status",
+            "error_message",
+            "retry_count",
+            "last_attempt",
+            "sent_by",
+            "sent_by_name",
+            "created_at",
+            "sent_at",
+        ]
+        read_only_fields = fields
+ 
+    def get_sent_by_name(self, obj) -> str | None:
+        if obj.sent_by:
+            return obj.sent_by.get_full_name() or obj.sent_by.username
+        return None
+ 
+    def _latest_su(self, obj):
+        """Fetch and cache the latest status update per log instance to avoid N+1."""
+        if not hasattr(obj, "_cached_su"):
+            su = (
+                obj.intervention.status_updates
+                .select_related("decision")
+                .order_by("-created_at")
+                .first()
+            )
+            obj._cached_su = su
+        return obj._cached_su
+ 
+    def get_is_discussed(self, obj) -> bool:
+        return self._latest_su(obj) is not None
+ 
+    def get_decision(self, obj) -> str | None:
+        su = self._latest_su(obj)
+        return str(su.decision) if su and su.decision else None
+ 
+    def get_decision_date(self, obj) -> str | None:
+        su = self._latest_su(obj)
+        return su.decision_date.strftime("%d %B %Y") if su and su.decision_date else None
+ 
+
+

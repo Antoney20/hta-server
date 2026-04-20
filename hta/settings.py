@@ -76,7 +76,7 @@ CORS_ALLOWED_ORIGINS = [
     'https://localhost:3000', 
     'https://prod-hta.vercel.app'
 ]
-
+ORG_NAME = "Benefits Package and Tariffs Advisory Panel"
 
 CORS_ALLOW_METHODS = [
     'DELETE',

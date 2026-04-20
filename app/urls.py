@@ -4,6 +4,8 @@ from .views import (
     AdminScoreViewSet,
     CriteriaInformationViewSet,
     DecisionTypeViewSet,
+    FeedbackCategoryViewSet,
+    FeedbackEmailLogViewSet,
     InterventionProposalViewSet,
     PublicProposalViewSet,
     ScoringReportView,
@@ -27,6 +29,9 @@ router.register(r"proposals",  PublicProposalViewSet, basename="public-proposals
 router.register(r"re-open", InterventionProposalViewSet, basename="scoring-reopen")
 router.register(r"topic-priority", TopicPriorityViewSet, basename="topic-priority")
 router.register(r"decision-types", DecisionTypeViewSet, basename="decision-type")
+router.register(r"feedback-categories",  FeedbackCategoryViewSet,    basename="feedback-category")
+router.register(r"feedback-email-logs",  FeedbackEmailLogViewSet,    basename="feedback-email-log")
+ 
 
 
 
