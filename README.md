@@ -1,14 +1,14 @@
 # BPTAP Server
 
-Backend service for the [Benefits Package and Tariffs Advisory Panel (BPTAP)](https://bptap.health.go.ke) — digitizing Kenya's Health Technology Assessment (HTA) process, developed by [CEMA](https://cema.africa) in collaboration with the Ministry of Health (MoH).
+Backend service for the [Benefits Package and Tariffs Advisory Panel (BPTAP)](https://bptap.health.go.ke) — digitizing Kenya's Health Technology Assessment (HTA) process, developed by [CEMA](https://cema-africa.uonbi.ac.ke) in collaboration with the Ministry of Health (MoH).
 
 ---
 
 ## Tech Stack
 
-- **Framework:** Django + Django REST Framework
+- **Framework:** Django + DRF
 - **Realtime:** Django Channels + Redis
-- **Auth:** SimpleJWT
+- **Auth:** JWT
 - **Server:** Daphne + Gunicorn
 - **Containerization:** Docker
 
@@ -52,7 +52,7 @@ docker compose up --build
 
 ```
 app/        # Core application logic
-hta/        # HTA process modules
+hta/        # HTA process modules 
 members/    # Member management
 users/      # Authentication and user accounts
 templates/  # Email templates
