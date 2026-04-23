@@ -28,10 +28,10 @@ For any significant change (50+ lines or a new feature), **open an issue first**
 
 ### PR checklist
 
-- [ ] Linked to a related issue
-- [ ] Migrations included if models changed
-- [ ] No secrets or `.env` values committed
-- [ ] Passes existing tests
+- [  ] Linked to a related issue
+- [  ] Migrations included if models changed
+- [  ] No secrets or `.env` values committed
+- [  ] Passes existing tests
 
 ---
 

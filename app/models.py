@@ -377,6 +377,117 @@ class CriteriaAppraisalScore(models.Model):
     def __str__(self):
         return f"{self.reviewer} — {self.intervention} — {self.criteria}"
 
+
+
+
+
+
+def evidence_document_path(instance, filename):
+    return f"appraisal/evidence/{instance.evidence.id}/documents/{filename}"
+ 
+ 
+def evidence_image_path(instance, filename):
+    return f"appraisal/evidence/{instance.evidence.id}/images/{filename}"
+ 
+ 
+class AppraisalCriteriaEvidence(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    intervention = models.ForeignKey(
+        InterventionProposal,
+        on_delete=models.CASCADE,
+        related_name="appraisal_evidence",
+    )
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="appraisal_evidence_created",
+    )
+    brief_info = models.TextField(null=True, blank=True)
+    mortality_score         = models.IntegerField(null=True, blank=True)
+    morbidity_score         = models.IntegerField(null=True, blank=True)
+    clinical_effectiveness  = models.TextField(null=True, blank=True)
+    population              = models.TextField(null=True, blank=True)
+    equity                  = models.TextField(null=True, blank=True)
+    cost_effectiveness               = models.TextField(null=True, blank=True)
+    budget_impact_affordability      = models.TextField(null=True, blank=True)
+    catastrophic_health_expenditure  = models.TextField(null=True, blank=True)
+    feasibility_of_implementation    = models.TextField(null=True, blank=True)
+    access_to_healthcare             = models.TextField(null=True, blank=True)
+    congruence_with_health_priorities = models.TextField(null=True, blank=True)
+    additional_info = models.TextField(null=True, blank=True)
+ 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["-created_at"]
+        
+ 
+    def __str__(self):
+        return f"Appraisal Evidence — {self.intervention}"
+
+
+
+class AppraisalEvidenceDocument(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    evidence = models.ForeignKey(
+        AppraisalCriteriaEvidence,
+        on_delete=models.CASCADE,
+        related_name="documents",
+    )
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="appraisal_documents_uploaded",
+    )
+ 
+    file        = models.FileField(upload_to=evidence_document_path)
+    filename    = models.CharField(max_length=255, blank=True)   
+    description = models.CharField(max_length=500, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["uploaded_at"]
+ 
+    def save(self, *args, **kwargs):
+        if self.file and not self.filename:
+            self.filename = self.file.name.split("/")[-1]
+        super().save(*args, **kwargs)
+ 
+    def __str__(self):
+        return f"{self.filename} — {self.evidence}"
+ 
+ 
+class AppraisalEvidenceImage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    evidence = models.ForeignKey(
+        AppraisalCriteriaEvidence,
+        on_delete=models.CASCADE,
+        related_name="images",
+    )
+    uploaded_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="appraisal_images_uploaded",
+    )
+ 
+    image       = models.ImageField(upload_to=evidence_image_path)
+    caption     = models.CharField(max_length=500, blank=True)
+    alt_text    = models.CharField(max_length=255, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        ordering = ["uploaded_at"]
+ 
+    def __str__(self):
+        return f"Image — {self.evidence} ({self.caption or 'no caption'})"
+
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
 auditlog.register(InterventionSystemCategory)

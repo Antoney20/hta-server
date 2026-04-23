@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import InterventionProposal
-from .models import CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 
 
 class SelectionToolSerializer(serializers.ModelSerializer):
@@ -359,3 +359,223 @@ class FeedbackEmailLogSerializer(serializers.ModelSerializer):
   
 
 
+
+
+class CriteriaAppraisalToolSerializer(serializers.ModelSerializer):
+    """Full read serializer — used for GET list/retrieve."""
+ 
+    class Meta:
+        model  = CriteriaAppraisalTool
+        fields = ["id", "criteria", "description", "scores", "created_at"]
+        read_only_fields = ["id", "created_at"]
+ 
+ 
+class CriteriaAppraisalToolWriteSerializer(serializers.ModelSerializer):
+    """Write serializer — used for create / update by admin & secretariat."""
+ 
+    class Meta:
+        model  = CriteriaAppraisalTool
+        fields = ["id", "criteria", "description", "scores"]
+        read_only_fields = ["id"]
+ 
+    def validate_scores(self, value):
+        """
+        scores must be a dict mapping label → numeric weight, e.g.
+        {"Low": 1, "Medium": 2, "High": 3}
+        """
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("scores must be a JSON object.")
+        for label, weight in value.items():
+            if not isinstance(label, str) or not label.strip():
+                raise serializers.ValidationError(
+                    "Each key in scores must be a non-empty string."
+                )
+            if not isinstance(weight, (int, float)):
+                raise serializers.ValidationError(
+                    f"Score weight for '{label}' must be a number."
+                )
+        return value
+ 
+ 
+
+class CriteriaAppraisalScoreCreateSerializer(serializers.ModelSerializer):
+    """Used for POST / bulk — reviewer is injected from request.user."""
+ 
+    class Meta:
+        model  = CriteriaAppraisalScore
+        fields = ["id", "intervention", "criteria", "score", "comment"]
+        read_only_fields = ["id"]
+ 
+    def validate(self, attrs):
+        comment = (attrs.get("comment") or "").strip()
+        score   = attrs.get("score")
+ 
+        if comment and not score:
+            raise serializers.ValidationError({
+                "score": "A score must be selected when a comment is provided."
+            })
+ 
+        criteria = attrs.get("criteria")
+        if criteria and score:
+            valid_keys = list(criteria.scores.keys())
+            if valid_keys and score not in criteria.scores:
+                raise serializers.ValidationError({
+                    "score": (
+                        f"'{score}' is not a valid score for this criterion. "
+                        f"Valid options: {valid_keys}."
+                    )
+                })
+        return attrs
+ 
+ 
+class CriteriaAppraisalScoreSerializer(serializers.ModelSerializer):
+    """Full read serializer — enriched with reviewer + related names."""
+ 
+    reviewer_name      = serializers.SerializerMethodField()
+    reviewer_email     = serializers.SerializerMethodField()
+    intervention_name  = serializers.SerializerMethodField()
+    criteria_name      = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = CriteriaAppraisalScore
+        fields = [
+            "id",
+            "reviewer", "reviewer_name", "reviewer_email",
+            "intervention", "intervention_name",
+            "criteria", "criteria_name",
+            "score", "comment",
+            "is_rescored", 
+            "created_at", "updated_at",
+        ]
+        read_only_fields = fields
+ 
+    def get_reviewer_name(self, obj) -> str:
+        u = obj.reviewer
+        full = f"{u.first_name} {u.last_name}".strip()
+        return full or u.username
+ 
+    def get_reviewer_email(self, obj) -> str:
+        return obj.reviewer.email
+ 
+    def get_intervention_name(self, obj) -> str:
+        return getattr(obj.intervention, "intervention_name", str(obj.intervention))
+ 
+    def get_criteria_name(self, obj) -> str:
+        return obj.criteria.criteria
+
+
+class AppraisalCriteriaEvidenceSerializer(serializers.ModelSerializer):
+    created_by_name    = serializers.SerializerMethodField()
+    intervention_name  = serializers.SerializerMethodField()
+    # documents          = AppraisalEvidenceDocumentSerializer(many=True, read_only=True)
+    # images             = AppraisalEvidenceImageSerializer(many=True, read_only=True)
+ 
+    class Meta:
+        model  = AppraisalCriteriaEvidence
+        fields = [
+            "id",
+            "intervention", "intervention_name",   "created_by", "created_by_name",
+            "brief_info", "mortality_score", "morbidity_score", "clinical_effectiveness","population", "equity",
+            "cost_effectiveness","budget_impact_affordability", "catastrophic_health_expenditure","feasibility_of_implementation", "access_to_healthcare","congruence_with_health_priorities", "additional_info",
+            "documents", "images",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = [
+            "id", "created_by", "created_by_name", "intervention_name",
+            # "documents", "images",
+            "created_at", "updated_at",
+        ]
+ 
+    def get_created_by_name(self, obj) -> str | None:
+        if not obj.created_by:
+            return None
+        u = obj.created_by
+        full = f"{u.first_name} {u.last_name}".strip()
+        return full or u.username
+ 
+    def get_intervention_name(self, obj) -> str:
+        return getattr(obj.intervention, "intervention_name", str(obj.intervention))
+ 
+class AppraisalCriteriaEvidenceWriteSerializer(serializers.ModelSerializer):
+    class Meta:
+        model  = AppraisalCriteriaEvidence
+        fields = [
+            "id", "intervention",
+ 
+            "brief_info",
+            "mortality_score", "morbidity_score",
+ 
+            "clinical_effectiveness",
+            "population", "equity",
+            "cost_effectiveness",
+            "budget_impact_affordability",
+            "catastrophic_health_expenditure",
+            "feasibility_of_implementation",
+            "access_to_healthcare",
+            "congruence_with_health_priorities",
+            "additional_info",
+        ]
+        read_only_fields = ["id"]
+ 
+
+
+
+
+
+
+# class AppraisalEvidenceDocumentSerializer(serializers.ModelSerializer):
+#     uploaded_by_name = serializers.SerializerMethodField()
+ 
+#     class Meta:
+#         model  = AppraisalEvidenceDocument
+#         fields = [
+#             "id", "file", "filename", "description",
+#             "uploaded_by", "uploaded_by_name", "uploaded_at",
+#         ]
+#         read_only_fields = ["id", "filename", "uploaded_by", "uploaded_by_name", "uploaded_at"]
+ 
+#     def get_uploaded_by_name(self, obj) -> str | None:
+#         if not obj.uploaded_by:
+#             return None
+#         u = obj.uploaded_by
+#         full = f"{u.first_name} {u.last_name}".strip()
+#         return full or u.username
+ 
+ 
+# class AppraisalEvidenceDocumentUploadSerializer(serializers.ModelSerializer):
+#     """Used for POST — file + optional description only."""
+ 
+#     class Meta:
+#         model  = AppraisalEvidenceDocument
+#         fields = ["id", "file", "description"]
+#         read_only_fields = ["id"]
+ 
+
+# class AppraisalEvidenceImageSerializer(serializers.ModelSerializer):
+#     uploaded_by_name = serializers.SerializerMethodField()
+ 
+#     class Meta:
+#         model  = AppraisalEvidenceImage
+#         fields = [
+#             "id", "image", "caption", "alt_text",
+#             "uploaded_by", "uploaded_by_name", "uploaded_at",
+#         ]
+#         read_only_fields = ["id", "uploaded_by", "uploaded_by_name", "uploaded_at"]
+ 
+#     def get_uploaded_by_name(self, obj) -> str | None:
+#         if not obj.uploaded_by:
+#             return None
+#         u = obj.uploaded_by
+#         full = f"{u.first_name} {u.last_name}".strip()
+#         return full or u.username
+ 
+ 
+# class AppraisalEvidenceImageUploadSerializer(serializers.ModelSerializer):
+#     """Used for POST — image + optional caption/alt_text only."""
+ 
+#     class Meta:
+#         model  = AppraisalEvidenceImage
+#         fields = ["id", "image", "caption", "alt_text"]
+#         read_only_fields = ["id"]
+ 
+ 

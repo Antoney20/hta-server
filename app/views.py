@@ -11,6 +11,8 @@ from rest_framework.decorators import api_view, permission_classes
 
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+ 
 
 
 from django.db.models import Q
@@ -26,12 +28,18 @@ from app.services.public_view import PublicProposalService
 from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
 from users.models import InterventionProposal, UserRole
-from users.permissions import IsAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
+from users.permissions import IsAdmin, IsPanel, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
+    AppraisalCriteriaEvidenceSerializer,
+    AppraisalCriteriaEvidenceWriteSerializer,
+    CriteriaAppraisalScoreCreateSerializer,
+    CriteriaAppraisalScoreSerializer,
+    CriteriaAppraisalToolSerializer,
+    CriteriaAppraisalToolWriteSerializer,
     CriteriaInformationCreateSerializer,
     CriteriaInformationSerializer,
     DecisionTypeCreateSerializer,
@@ -988,4 +996,161 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         statuses  = FeedbackService.get_all_statuses(date_from=date_from, date_to=date_to)
         return _ok([asdict(s) for s in statuses])
 
+    
+    
+    
+
+class CriteriaAppraisalToolViewSet(viewsets.ModelViewSet):
+    """
+    Manage scoring criteria and their score options.
+ 
+    - GET  (list / retrieve) — any authenticated user
+    - POST / PUT / PATCH / DELETE — admin and secretariat only
+    """
+ 
+    queryset = CriteriaAppraisalTool.objects.all().order_by("criteria")
+ 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [permissions.IsAuthenticated()]
+        return [IsAdmin() | IsSecretariate()]
+ 
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return CriteriaAppraisalToolWriteSerializer
+        return CriteriaAppraisalToolSerializer
+ 
+ 
+class CriteriaAppraisalScoreViewSet(viewsets.ModelViewSet):
+    """
+    Capture panel / admin appraisal scores per criterion per intervention.
+ 
+    - GET  — reviewer sees only their own scores (filterable by ?intervention=<uuid>)
+    - POST / bulk — admin and panel only
+    - PUT / PATCH — blocked; use /rescore/ once a window is open
+    - DELETE — admin only
+    """
+ 
+    permission_classes = [permissions.IsAuthenticated]
+ 
+
+    def _assert_can_score(self, user) -> None:
+        """Only admin or panel members may submit scores."""
+        if user.role not in (UserRole.ADMIN, UserRole.PANEL):
+            raise PermissionDenied("Only panel members and admins can submit appraisal scores.")
+ 
+    def get_queryset(self):
+        qs = CriteriaAppraisalScore.objects.select_related(
+            "reviewer", "intervention", "criteria", "rescored_by"
+        ).filter(reviewer=self.request.user)
+ 
+        intervention_id = self.request.query_params.get("intervention")
+        if intervention_id:
+            qs = qs.filter(intervention_id=intervention_id)
+ 
+        return qs
+ 
+    def get_serializer_class(self):
+        if self.action in ("create", "bulk_create"):
+            return CriteriaAppraisalScoreCreateSerializer
+        return CriteriaAppraisalScoreSerializer
+ 
+    # ── write operations ──────────────────────────────────────────────────────
+ 
+    def perform_create(self, serializer):
+        self._assert_can_score(self.request.user)
+        serializer.save(reviewer=self.request.user)
+ 
+    def perform_update(self, serializer):
+        raise PermissionDenied(
+            "Scores cannot be edited directly. "
+            "Use the rescore endpoint once a rescore window is open."
+        )
+ 
+    def destroy(self, request, *args, **kwargs):
+        if request.user.role != UserRole.ADMIN:
+            raise PermissionDenied("Only admins can delete appraisal scores.")
+        return super().destroy(request, *args, **kwargs)
+ 
+    # ── bulk create ───────────────────────────────────────────────────────────
+ 
+    @action(detail=False, methods=["post"], url_path="bulk")
+    def bulk_create(self, request):
+        """
+        POST /appraisal-scores/bulk/
+        Body: { "scores": [ { intervention, criteria, score, comment? }, ... ] }
+ 
+        All-or-nothing — if any item fails validation, nothing is saved.
+        """
+        self._assert_can_score(request.user)
+ 
+        items = request.data.get("scores", [])
+        if not items:
+            raise ValidationError({"detail": "No scores provided."})
+ 
+        errors  = []
+        created = []
+ 
+        try:
+            with transaction.atomic():
+                for i, item in enumerate(items):
+                    s = CriteriaAppraisalScoreCreateSerializer(data=item)
+                    if not s.is_valid():
+                        errors.append({
+                            "index":    i,
+                            "criteria": item.get("criteria"),
+                            "errors":   s.errors,
+                        })
+                    else:
+                        created.append(s.save(reviewer=request.user))
+ 
+                if errors:
+                    raise ValidationError({
+                        "detail": "Validation failed — no scores were saved.",
+                        "errors": errors,
+                    })
+ 
+        except ValidationError:
+            raise
+        except Exception as exc:
+            raise ValidationError({"detail": "Unexpected error.", "error": str(exc)})
+ 
+        return Response(
+            CriteriaAppraisalScoreSerializer(created, many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+class AppraisalCriteriaEvidenceViewSet(viewsets.ModelViewSet):
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+ 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [permissions.IsAuthenticated()]
+        return [IsAdmin() | IsSecretariate() | IsPanel()]
+ 
+    def get_queryset(self):
+        qs = AppraisalCriteriaEvidence.objects.select_related(
+            "intervention", "created_by"
+        ).prefetch_related("documents", "images")
+ 
+        intervention_id = self.request.query_params.get("intervention")
+        if intervention_id:
+            qs = qs.filter(intervention_id=intervention_id)
+ 
+        return qs
+ 
+    def get_serializer_class(self):
+        if self.action in ("create", "update", "partial_update"):
+            return AppraisalCriteriaEvidenceWriteSerializer
+        return AppraisalCriteriaEvidenceSerializer
+ 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+ 
+    def perform_destroy(self, instance):
+        if self.request.user.role not in (UserRole.ADMIN):
+            raise PermissionDenied("Only admin or secretariat can delete evidence records.")
+        instance.delete()
+ 
     

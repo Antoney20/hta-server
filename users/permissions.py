@@ -93,3 +93,13 @@ class IsSecretariatOrAdmin(BasePermission):
             request.user.is_authenticated
             and request.user.role in ("secretariat", "admin")
         )
+        
+        
+class IsPanel(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.has_role(UserRole.PANEL)
+        )
+ 
