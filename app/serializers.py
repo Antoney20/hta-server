@@ -362,41 +362,22 @@ class FeedbackEmailLogSerializer(serializers.ModelSerializer):
 
 
 class CriteriaAppraisalToolSerializer(serializers.ModelSerializer):
-    """Full read serializer — used for GET list/retrieve."""
- 
     class Meta:
         model  = CriteriaAppraisalTool
-        fields = ["id", "criteria", "description", "scores", "created_at"]
+        fields = ["id", "criteria", "description", "scoring_approach", "score", "created_at"]
         read_only_fields = ["id", "created_at"]
- 
- 
+
+
 class CriteriaAppraisalToolWriteSerializer(serializers.ModelSerializer):
-    """Write serializer — used for create / update by admin & secretariat."""
- 
     class Meta:
         model  = CriteriaAppraisalTool
-        fields = ["id", "criteria", "description", "scores"]
+        fields = ["id", "criteria", "description", "scoring_approach", "score"]
         read_only_fields = ["id"]
- 
-    def validate_scores(self, value):
-        """
-        scores must be a dict mapping label → numeric weight, e.g.
-        {"Low": 1, "Medium": 2, "High": 3}
-        """
-        if not isinstance(value, dict):
-            raise serializers.ValidationError("scores must be a JSON object.")
-        for label, weight in value.items():
-            if not isinstance(label, str) or not label.strip():
-                raise serializers.ValidationError(
-                    "Each key in scores must be a non-empty string."
-                )
-            if not isinstance(weight, (int, float)):
-                raise serializers.ValidationError(
-                    f"Score weight for '{label}' must be a number."
-                )
+
+    def validate_score(self, value):
+        if value is not None and (value < 0 or value > 5):
+            raise serializers.ValidationError("Score must be between 0 and 5.")
         return value
- 
- 
 
 class CriteriaAppraisalScoreCreateSerializer(serializers.ModelSerializer):
     """Used for POST / bulk — reviewer is injected from request.user."""
@@ -467,17 +448,31 @@ class CriteriaAppraisalScoreSerializer(serializers.ModelSerializer):
 class AppraisalCriteriaEvidenceSerializer(serializers.ModelSerializer):
     created_by_name    = serializers.SerializerMethodField()
     intervention_name  = serializers.SerializerMethodField()
+    reference_number = serializers.CharField(
+        source="intervention.reference_number", read_only=True
+    )
     # documents          = AppraisalEvidenceDocumentSerializer(many=True, read_only=True)
     # images             = AppraisalEvidenceImageSerializer(many=True, read_only=True)
  
     class Meta:
         model  = AppraisalCriteriaEvidence
         fields = [
-            "id",
-            "intervention", "intervention_name",   "created_by", "created_by_name",
-            "brief_info", "mortality_score", "morbidity_score", "clinical_effectiveness","population", "equity",
-            "cost_effectiveness","budget_impact_affordability", "catastrophic_health_expenditure","feasibility_of_implementation", "access_to_healthcare","congruence_with_health_priorities", "additional_info",
-            "documents", "images",
+            "id", "intervention", "reference_number", "intervention_name", "created_by", "created_by_name",
+            "brief_info",
+            "clinical_effectiveness",
+            "safety",
+            "quality",
+            "burden_of_disease_mortality",
+            "burden_of_disease_morbidity",
+            "population",
+            "equity",
+            "cost_effectiveness",
+            "budget_impact_affordability",
+            "feasibility_of_implementation",
+            "catastrophic_health_expenditure",
+            "access_to_healthcare",
+            "congruence_with_health_priorities",
+            "additional_info",
             "created_at", "updated_at",
         ]
         read_only_fields = [
@@ -495,18 +490,21 @@ class AppraisalCriteriaEvidenceSerializer(serializers.ModelSerializer):
  
     def get_intervention_name(self, obj) -> str:
         return getattr(obj.intervention, "intervention_name", str(obj.intervention))
- 
+    
+  
 class AppraisalCriteriaEvidenceWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model  = AppraisalCriteriaEvidence
         fields = [
             "id", "intervention",
- 
             "brief_info",
-            "mortality_score", "morbidity_score",
- 
             "clinical_effectiveness",
-            "population", "equity",
+            "safety",
+            "quality",
+            "burden_of_disease_mortality",
+            "burden_of_disease_morbidity",
+            "population",
+            "equity",
             "cost_effectiveness",
             "budget_impact_affordability",
             "catastrophic_health_expenditure",
@@ -516,8 +514,6 @@ class AppraisalCriteriaEvidenceWriteSerializer(serializers.ModelSerializer):
             "additional_info",
         ]
         read_only_fields = ["id"]
- 
-
 
 
 

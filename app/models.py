@@ -342,12 +342,12 @@ class FeedbackEmailLog(models.Model):
 
 
 class CriteriaAppraisalTool(models.Model):
-    """Defines each scoring criterion and its scoring logic."""
-    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    criteria    = models.CharField(max_length=255)
-    description = models.TextField(blank=True)
-    scores      = models.JSONField(default=dict, blank=True)
-    created_at  = models.DateTimeField(auto_now_add=True)
+    id               = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    criteria         = models.CharField(max_length=255)
+    description      = models.TextField(blank=True)
+    scoring_approach = models.TextField(blank=True)
+    score            = models.IntegerField(null=True, blank=True)
+    created_at       = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
         return self.criteria
@@ -400,34 +400,59 @@ class AppraisalCriteriaEvidence(models.Model):
     created_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        null=True, blank=True,
         related_name="appraisal_evidence_created",
     )
-    brief_info = models.TextField(null=True, blank=True)
-    mortality_score         = models.IntegerField(null=True, blank=True)
-    morbidity_score         = models.IntegerField(null=True, blank=True)
-    clinical_effectiveness  = models.TextField(null=True, blank=True)
-    population              = models.TextField(null=True, blank=True)
-    equity                  = models.TextField(null=True, blank=True)
-    cost_effectiveness               = models.TextField(null=True, blank=True)
-    budget_impact_affordability      = models.TextField(null=True, blank=True)
-    catastrophic_health_expenditure  = models.TextField(null=True, blank=True)
-    feasibility_of_implementation    = models.TextField(null=True, blank=True)
-    access_to_healthcare             = models.TextField(null=True, blank=True)
+
+    brief_info                        = models.TextField(null=True, blank=True)
+
+    # Criteria 1
+    clinical_effectiveness            = models.TextField(null=True, blank=True)
+
+    # Criteria 2
+    safety                            = models.TextField(null=True, blank=True)
+
+    # Criteria 3
+    quality                           = models.TextField(null=True, blank=True)
+
+    # Criteria 4 — Burden of Disease
+    burden_of_disease_mortality       = models.TextField(null=True, blank=True)
+    burden_of_disease_morbidity       = models.TextField(null=True, blank=True)  # incidence/occurrence
+
+    # Criteria 5
+    population                        = models.TextField(null=True, blank=True)
+
+    # Criteria 6
+    equity                            = models.TextField(null=True, blank=True)
+
+    # Criteria 7
+    cost_effectiveness                = models.TextField(null=True, blank=True)
+
+    # Criteria 8
+    budget_impact_affordability       = models.TextField(null=True, blank=True)
+
+    # Criteria 9
+    feasibility_of_implementation     = models.TextField(null=True, blank=True)
+
+    # Criteria 10
+    catastrophic_health_expenditure   = models.TextField(null=True, blank=True)
+
+    # Criteria 11
+    access_to_healthcare              = models.TextField(null=True, blank=True)
+
+    # Criteria 12
     congruence_with_health_priorities = models.TextField(null=True, blank=True)
-    additional_info = models.TextField(null=True, blank=True)
- 
+
+    additional_info                   = models.TextField(null=True, blank=True)
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
- 
+
     class Meta:
         ordering = ["-created_at"]
-        
- 
+
     def __str__(self):
         return f"Appraisal Evidence — {self.intervention}"
-
 
 
 class AppraisalEvidenceDocument(models.Model):

@@ -28,7 +28,7 @@ from app.services.public_view import PublicProposalService
 from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
 from users.models import InterventionProposal, UserRole
-from users.permissions import IsAdmin, IsPanel, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
+from users.permissions import IsAdmin, IsPanel, IsSecretariatOrAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
@@ -1013,7 +1013,7 @@ class CriteriaAppraisalToolViewSet(viewsets.ModelViewSet):
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [permissions.IsAuthenticated()]
-        return [IsAdmin() | IsSecretariate()]
+        return [IsAdmin()]
  
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
@@ -1120,37 +1120,42 @@ class CriteriaAppraisalScoreViewSet(viewsets.ModelViewSet):
             status=status.HTTP_201_CREATED,
         )
 
-
 class AppraisalCriteriaEvidenceViewSet(viewsets.ModelViewSet):
     parser_classes = [MultiPartParser, FormParser, JSONParser]
- 
+
     def get_permissions(self):
         if self.action in ("list", "retrieve"):
             return [permissions.IsAuthenticated()]
-        return [IsAdmin() | IsSecretariate() | IsPanel()]
- 
+        if self.action == "destroy":
+            return [IsAdmin()]
+        return [IsSecretariatOrAdmin()]  # create, update, partial_update
+
     def get_queryset(self):
         qs = AppraisalCriteriaEvidence.objects.select_related(
             "intervention", "created_by"
         ).prefetch_related("documents", "images")
- 
+
         intervention_id = self.request.query_params.get("intervention")
         if intervention_id:
             qs = qs.filter(intervention_id=intervention_id)
- 
+
         return qs
- 
+
     def get_serializer_class(self):
         if self.action in ("create", "update", "partial_update"):
             return AppraisalCriteriaEvidenceWriteSerializer
         return AppraisalCriteriaEvidenceSerializer
- 
+
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
- 
+
     def perform_destroy(self, instance):
-        if self.request.user.role not in (UserRole.ADMIN):
-            raise PermissionDenied("Only admin or secretariat can delete evidence records.")
+        user = self.request.user
+        is_owner = instance.created_by == user
+        is_admin = user.has_role(UserRole.ADMIN)
+        if not (is_owner or is_admin):
+            raise PermissionDenied("You can only delete your own evidence records.")
         instance.delete()
- 
-    
+
+
+
