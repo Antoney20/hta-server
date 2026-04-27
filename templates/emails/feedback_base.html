@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ subject }}</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #000;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #fff;
+        }
+        .header {
+            background-color: #27aae1;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+            border-radius: 8px 8px 0 0;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 22px;
+        }
+        .content {
+            background-color: #fff;
+            padding: 30px;
+            border: 1px solid #27aae1;
+            border-top: none;
+        }
+        .detail-block {
+            background-color: #f4f9fd;
+            border-left: 4px solid #27aae1;
+            padding: 12px 16px;
+            margin: 20px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .detail-block p {
+            margin: 4px 0;
+            font-size: 14px;
+        }
+        .detail-block strong {
+            color: #27aae1;
+        }
+        .feedback-block {
+            background-color: #fffbe6;
+            border-left: 4px solid #f0a500;
+            padding: 12px 16px;
+            margin: 20px 0;
+            border-radius: 0 4px 4px 0;
+        }
+        .feedback-block p {
+            margin: 4px 0;
+            font-size: 14px;
+        }
+        .footer {
+            background-color: #000;
+            color: #fff;
+            padding: 20px;
+            text-align: center;
+            border-radius: 0 0 8px 8px;
+            font-size: 13px;
+        }
+        .footer a {
+            color: #27aae1;
+            text-decoration: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="content">
+        {{ body_content }}
+    </div>
+
+    <div class="footer">
+        <p>For enquiries: <a href="mailto:{{ bptap_email }}">{{ btap_email }}</a></p>
+        <p>&copy; {{ current_year }} {{ bptap }}. All rights reserved.</p>
+    </div>
+
+</body>
+</html>

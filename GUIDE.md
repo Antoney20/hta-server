@@ -47,49 +47,6 @@ sudo systemctl status postgresql
 
 ---
 
-## Database Setup
-
-### 1. Create PostgreSQL Database and User
-
-Access the PostgreSQL shell:
-```bash
-sudo -u postgres psql
-```
-
-Create the database and user:
-```sql
-CREATE DATABASE bptap;
-** - done
-\q
-```
-
-### 2. Configure Database Connection
-
-Create a `.env` file in the project root directory with your database credentials:
-
-```properties
-# Database Configuration
-DB_NAME=hta_db
-DB_USER=postgres
-DB_PASSWORD=""
-DB_HOST=127.0.0.0.1
-DB_PORT=5432
-
-# Django Secret Key (generate a new one for production)
-SECRET_KEY=  
-
-# Debug Mode (set to False in production)
-DEBUG=True
-
-# Allowed Hosts (comma-separated,) # we will add the domain here
-ALLOWED_HOSTS=127.0.0.0.1,127.0.0.1
-```
-
-
-**Note:**  I'll share env separately
-
----
-
 ## Setup Process
 
 ### 1. Clone the Repository
@@ -127,16 +84,7 @@ The setup script will automatically:
 - ✓ Collect static files
 - ✓ Prompt you to create a superuser account
 
-### 4. Create Superuser (Admin Account)
 
-When prompted by the setup script, create your admin account: (Required)
-```bash
-Username: admin
-Email address: admin@bptap.com
-Password: ********
-Password (again): ********
-```
-then share the password.
 
 ---
 
@@ -169,7 +117,7 @@ then share the password.
 ### Access the Application
 
 - **Main Application:** [http://127.0.0.0.1:8000](http://127.0.0.0.1:8000)
-- **Admin Panel:** [http://127.0.0.0.1:8000/admin](http://127.0.0.0.1:8000/admin)
+
 
 ---
 

@@ -2,8 +2,13 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
     AdminScoreViewSet,
+    AppraisalCriteriaEvidenceViewSet,
+    CriteriaAppraisalScoreViewSet,
+    CriteriaAppraisalToolViewSet,
     CriteriaInformationViewSet,
     DecisionTypeViewSet,
+    FeedbackCategoryViewSet,
+    FeedbackEmailLogViewSet,
     InterventionProposalViewSet,
     PublicProposalViewSet,
     ScoringReportView,
@@ -27,6 +32,12 @@ router.register(r"proposals",  PublicProposalViewSet, basename="public-proposals
 router.register(r"re-open", InterventionProposalViewSet, basename="scoring-reopen")
 router.register(r"topic-priority", TopicPriorityViewSet, basename="topic-priority")
 router.register(r"decision-types", DecisionTypeViewSet, basename="decision-type")
+router.register(r"feedback-categories",  FeedbackCategoryViewSet,    basename="feedback-category")
+router.register(r"feedback-email-logs",  FeedbackEmailLogViewSet,    basename="feedback-email-log")
+router.register(r"appraisal-criteria", CriteriaAppraisalToolViewSet, basename="appraisal-criteria")
+router.register(r"appraisal-scores",   CriteriaAppraisalScoreViewSet, basename="appraisal-scores")
+router.register(r"appraisal-evidence", AppraisalCriteriaEvidenceViewSet, basename="appraisal-evidence",)
+ 
 
 
 

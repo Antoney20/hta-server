@@ -17,6 +17,7 @@ router.register(r'newsletter', views.NewsletterSubscriptionViewSet, basename='ne
 
 
 
+
 app_name = 'members'
 
 urlpatterns = [

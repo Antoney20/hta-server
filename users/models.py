@@ -28,13 +28,14 @@ class UserRole:
     CONTENT_MANAGER = 'content_manager'
     USER = 'user'
     SWG = 'swg'
-
+    PANEL           = 'panel' 
     CHOICES = [
         (ADMIN, 'Admin'),
         (SECRETARIAT, 'Secretariat'),
         (CONTENT_MANAGER, 'Content Manager'),
         (USER, 'User'),
         (SWG, 'SWG'),
+        (PANEL,           'Panel'), 
     ]
 
 
@@ -152,6 +153,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
     def is_swg(self):
         return self.role == UserRole.SWG
 
+    def is_panel(self):
+        return self.role == UserRole.PANEL
 
     @property
     def is_blocked(self):

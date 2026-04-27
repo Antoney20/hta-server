@@ -32,6 +32,8 @@ DEBUG = False
 # Allowed Hosts
 ALLOWED_HOSTS = ['bptap.health.go.ke','localhost','127.0.0.1']
 
+
+
 # Enable CSRF protection
 # CSRF_COOKIE_SECURE = True  
 # CSRF_COOKIE_HTTPONLY = True
@@ -281,7 +283,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-fld
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
-
+ORG_NAME = "BPTAP"
 #  jwt settings
 SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(days=2),
