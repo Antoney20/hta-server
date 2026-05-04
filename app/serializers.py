@@ -214,6 +214,7 @@ class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
             "feedback",
             "system_categories",
             "is_scored",
+            "move_to_panel",
             "created_at",
             "updated_at",
         ]
@@ -379,61 +380,59 @@ class CriteriaAppraisalToolWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Score must be between 0 and 5.")
         return value
 
+
 class CriteriaAppraisalScoreCreateSerializer(serializers.ModelSerializer):
-    """Used for POST / bulk — reviewer is injected from request.user."""
+    """POST / bulk — reviewer injected from request.user."""
  
     class Meta:
-        model  = CriteriaAppraisalScore
+        model = CriteriaAppraisalScore
         fields = ["id", "intervention", "criteria", "score", "comment"]
         read_only_fields = ["id"]
  
     def validate(self, attrs):
         comment = (attrs.get("comment") or "").strip()
-        score   = attrs.get("score")
+        score = attrs.get("score")
+        criteria = attrs.get("criteria")
  
         if comment and not score:
-            raise serializers.ValidationError({
-                "score": "A score must be selected when a comment is provided."
-            })
+            raise serializers.ValidationError(
+                {"score": "A score must be provided when a comment is given."}
+            )
  
-        criteria = attrs.get("criteria")
         if criteria and score:
-            valid_keys = list(criteria.scores.keys())
-            if valid_keys and score not in criteria.scores:
-                raise serializers.ValidationError({
-                    "score": (
-                        f"'{score}' is not a valid score for this criterion. "
-                        f"Valid options: {valid_keys}."
-                    )
-                })
+            valid = criteria.scores  # dict of valid options on the model
+            if valid and score not in valid:
+                raise serializers.ValidationError(
+                    {"score": f"'{score}' is not valid. Options: {list(valid.keys())}."}
+                )
+ 
         return attrs
  
  
 class CriteriaAppraisalScoreSerializer(serializers.ModelSerializer):
-    """Full read serializer — enriched with reviewer + related names."""
+    """Full read serializer."""
  
-    reviewer_name      = serializers.SerializerMethodField()
-    reviewer_email     = serializers.SerializerMethodField()
-    intervention_name  = serializers.SerializerMethodField()
-    criteria_name      = serializers.SerializerMethodField()
+    reviewer_name = serializers.SerializerMethodField()
+    reviewer_email = serializers.SerializerMethodField()
+    intervention_name = serializers.SerializerMethodField()
+    criteria_name = serializers.SerializerMethodField()
  
     class Meta:
-        model  = CriteriaAppraisalScore
+        model = CriteriaAppraisalScore
         fields = [
             "id",
             "reviewer", "reviewer_name", "reviewer_email",
             "intervention", "intervention_name",
             "criteria", "criteria_name",
             "score", "comment",
-            "is_rescored", 
+            "is_rescored", "rescored_by",
             "created_at", "updated_at",
         ]
         read_only_fields = fields
  
     def get_reviewer_name(self, obj) -> str:
         u = obj.reviewer
-        full = f"{u.first_name} {u.last_name}".strip()
-        return full or u.username
+        return f"{u.first_name} {u.last_name}".strip() or u.username
  
     def get_reviewer_email(self, obj) -> str:
         return obj.reviewer.email
@@ -443,6 +442,7 @@ class CriteriaAppraisalScoreSerializer(serializers.ModelSerializer):
  
     def get_criteria_name(self, obj) -> str:
         return obj.criteria.criteria
+ 
 
 
 class AppraisalCriteriaEvidenceSerializer(serializers.ModelSerializer):

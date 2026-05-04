@@ -4,6 +4,7 @@ import uuid
 from django.contrib.auth import get_user_model
 from auditlog.registry import auditlog
 
+from app.core.consts import get_pending_decision
 from users.models import InterventionProposal
 
 User = get_user_model()
@@ -186,6 +187,7 @@ class InterventionStatusUpdate(models.Model):
         on_delete=models.PROTECT,
         null=True,
         blank=True,
+        default=get_pending_decision, 
         related_name="status_updates",
         help_text="Formal HTA decision once reached.",
     )
@@ -202,6 +204,10 @@ class InterventionStatusUpdate(models.Model):
         help_text="More info supporting the decision.",
     )
 
+    move_to_panel = models.BooleanField(
+        default=False,
+        help_text="Mark intervention to move to panel review.",
+    )
     updated_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -217,6 +223,7 @@ class InterventionStatusUpdate(models.Model):
         indexes = [
             models.Index(fields=["intervention"], name="idx_status_intervention"),
             models.Index(fields=["decision_date"], name="idx_status_decision_date"),
+            models.Index(fields=["move_to_panel"], name="idx_status_move_to_panel"),
         ]
 
     def __str__(self):

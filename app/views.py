@@ -25,6 +25,7 @@ from app.core.emails.feedback import send_feedback_email
 from app.core.services.feedback import FeedbackService
 from app.services import criteria_info
 from app.services.public_view import PublicProposalService
+from app.services.scoring_p import bulk_create_scores, get_scores_for_user
 from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
 from users.models import InterventionProposal, UserRole
@@ -710,9 +711,7 @@ def _can_manage(user) -> bool:
 
 
 class TopicPriorityViewSet(viewsets.ModelViewSet):
-    """
-returns status info about an intervention
-    """
+    """Returns status info about an intervention."""
 
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
@@ -734,6 +733,52 @@ returns status info about an intervention
                 "Only secretariat and admin can modify topic priority records."
             )
 
+    @action(
+        detail=False,
+        methods=["post"],
+        url_path="bulk-move-to-panel",
+        permission_classes=[IsAdmin],
+    )
+    def bulk_move_to_panel(self, request):
+        """
+        Move multiple interventions to panel by intervention_id.
+        Works for both rows that already have a status update and scored-only rows.
+
+        """
+        intervention_ids = request.data.get("intervention_ids")
+
+        if not intervention_ids or not isinstance(intervention_ids, list):
+            return Response(
+                {"detail": "A non-empty list of 'intervention_ids' is required."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        try:
+            result = TopicPriorityService.bulk_move_to_panel(intervention_ids, request.user)
+        except ValueError as e:
+            return Response({"detail": str(e)}, status=status.HTTP_404_NOT_FOUND)
+
+        return Response(result, status=status.HTTP_200_OK)
+
+
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="move-to-panel",
+        permission_classes=[IsAdmin],
+    )
+    def move_to_panel(self, request, pk=None):
+        """
+        Move a single intervention to panel by status update pk.
+        Delegates to service so scored-only rows are handled consistently.
+        """
+        instance = self.get_object()
+        result = TopicPriorityService.move_to_panel(
+            str(instance.intervention_id), request.user
+        )
+        return Response(InterventionStatusUpdateSerializer(result).data)
+
+
     def list(self, request, *args, **kwargs):
         return Response(TopicPriorityService.fetch())
 
@@ -750,7 +795,9 @@ returns status info about an intervention
     def update(self, request, *args, **kwargs):
         self._assert_can_manage(request.user)
         instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data, partial=kwargs.get("partial", False))
+        serializer = self.get_serializer(
+            instance, data=request.data, partial=kwargs.get("partial", False)
+        )
         serializer.is_valid(raise_exception=True)
         instance = TopicPriorityService.update(instance, serializer.validated_data, request.user)
         return Response(InterventionStatusUpdateSerializer(instance).data)
@@ -1020,100 +1067,108 @@ class CriteriaAppraisalToolViewSet(viewsets.ModelViewSet):
             return CriteriaAppraisalToolWriteSerializer
         return CriteriaAppraisalToolSerializer
  
- 
+
+
 class CriteriaAppraisalScoreViewSet(viewsets.ModelViewSet):
     """
-    Capture panel / admin appraisal scores per criterion per intervention.
+    Appraisal scores per criterion per intervention.
  
-    - GET  — reviewer sees only their own scores (filterable by ?intervention=<uuid>)
-    - POST / bulk — admin and panel only
-    - PUT / PATCH — blocked; use /rescore/ once a window is open
-    - DELETE — admin only
+    GET    — reviewer sees only their own rows; filter with ?intervention=<uuid>
+    POST   — admin / panel only (single score via service)
+    bulk   — POST /bulk/  admin / panel only (atomic, all-or-nothing)
     """
  
     permission_classes = [permissions.IsAuthenticated]
  
-
     def _assert_can_score(self, user) -> None:
-        """Only admin or panel members may submit scores."""
         if user.role not in (UserRole.ADMIN, UserRole.PANEL):
             raise PermissionDenied("Only panel members and admins can submit appraisal scores.")
  
+
     def get_queryset(self):
-        qs = CriteriaAppraisalScore.objects.select_related(
-            "reviewer", "intervention", "criteria", "rescored_by"
-        ).filter(reviewer=self.request.user)
- 
-        intervention_id = self.request.query_params.get("intervention")
-        if intervention_id:
-            qs = qs.filter(intervention_id=intervention_id)
- 
-        return qs
+        return get_scores_for_user(
+            self.request.user,
+            intervention_id=self.request.query_params.get("intervention"),
+        )
  
     def get_serializer_class(self):
         if self.action in ("create", "bulk_create"):
             return CriteriaAppraisalScoreCreateSerializer
         return CriteriaAppraisalScoreSerializer
  
-    # ── write operations ──────────────────────────────────────────────────────
  
     def perform_create(self, serializer):
         self._assert_can_score(self.request.user)
-        serializer.save(reviewer=self.request.user)
+        vd = serializer.validated_data
+        instance = bulk_create_scores(
+            user=self.request.user,
+            intervention_id=str(vd["intervention"].id),
+            items=[{
+                "criteria_id": str(vd["criteria"].id),
+                "score": vd["score"],
+                "comment": vd.get("comment", ""),
+            }],
+        )[0]
+        # bind instance so the response serializer can render it
+        serializer.instance = instance
+ 
  
     def perform_update(self, serializer):
         raise PermissionDenied(
-            "Scores cannot be edited directly. "
-            "Use the rescore endpoint once a rescore window is open."
+            "Scores are immutable after creation."
         )
+ 
  
     def destroy(self, request, *args, **kwargs):
         if request.user.role != UserRole.ADMIN:
             raise PermissionDenied("Only admins can delete appraisal scores.")
         return super().destroy(request, *args, **kwargs)
  
-    # ── bulk create ───────────────────────────────────────────────────────────
- 
     @action(detail=False, methods=["post"], url_path="bulk")
     def bulk_create(self, request):
         """
         POST /appraisal-scores/bulk/
-        Body: { "scores": [ { intervention, criteria, score, comment? }, ... ] }
+        { "intervention_id": "<uuid>", "scores": [ { criteria_id, score, comment? } ] }
  
-        All-or-nothing — if any item fails validation, nothing is saved.
+        Delegates entirely to scoring_p.bulk_create_scores — atomic, no partial saves.
         """
         self._assert_can_score(request.user)
  
+        intervention_id = request.data.get("intervention_id")
         items = request.data.get("scores", [])
+ 
+        if not intervention_id:
+            raise ValidationError({"detail": "'intervention_id' is required."})
         if not items:
             raise ValidationError({"detail": "No scores provided."})
  
-        errors  = []
-        created = []
+
+        errors = []
+        validated = []
+        for i, item in enumerate(items):
+            s = CriteriaAppraisalScoreCreateSerializer(data={
+                "intervention": intervention_id,
+                "criteria": item.get("criteria_id"),
+                "score": item.get("score"),
+                "comment": item.get("comment", ""),
+            })
+            if not s.is_valid():
+                errors.append({"index": i, "criteria": item.get("criteria_id"), "errors": s.errors})
+            else:
+                validated.append({
+                    "criteria_id": item["criteria_id"],
+                    "score": item["score"],
+                    "comment": item.get("comment", ""),
+                })
  
-        try:
-            with transaction.atomic():
-                for i, item in enumerate(items):
-                    s = CriteriaAppraisalScoreCreateSerializer(data=item)
-                    if not s.is_valid():
-                        errors.append({
-                            "index":    i,
-                            "criteria": item.get("criteria"),
-                            "errors":   s.errors,
-                        })
-                    else:
-                        created.append(s.save(reviewer=request.user))
+        if errors:
+            raise ValidationError({"detail": "Validation failed — nothing saved.", "errors": errors})
  
-                if errors:
-                    raise ValidationError({
-                        "detail": "Validation failed — no scores were saved.",
-                        "errors": errors,
-                    })
- 
-        except ValidationError:
-            raise
-        except Exception as exc:
-            raise ValidationError({"detail": "Unexpected error.", "error": str(exc)})
+        created = bulk_create_scores(
+            user=request.user,
+            intervention_id=intervention_id,
+            items=validated,
+        )
  
         return Response(
             CriteriaAppraisalScoreSerializer(created, many=True).data,
