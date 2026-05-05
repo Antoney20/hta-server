@@ -778,6 +778,53 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
         )
         return Response(InterventionStatusUpdateSerializer(result).data)
 
+    @action(
+        detail=True,
+        methods=["post"],
+        url_path="undo-move-to-panel",
+        permission_classes=[IsAdmin],
+    )
+    def undo_move_to_panel(self, request, pk=None):
+        instance = self.get_object()
+
+        has_scores = CriteriaAppraisalScore.objects.filter(
+            intervention=instance.intervention
+        ).exists()
+
+        if has_scores:
+            return Response(
+                {
+                    "detail": "This intervention has existing appraisal scores and cannot be removed from panel.",
+                    "reason": "has_scores",
+                },
+                status=status.HTTP_409_CONFLICT,
+            )
+
+        if not instance.move_to_panel:
+            return Response(
+                {
+                    "detail": "This intervention is not currently on the panel.",
+                    "reason": "not_on_panel",
+                },
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        instance.move_to_panel = False
+        instance.updated_by = request.user
+        instance.save(update_fields=["move_to_panel", "updated_by", "updated_at"])
+
+        # Invalidate cache if your service has it
+        TopicPriorityService.invalidate()
+
+        return Response(
+            {
+                "detail": "Intervention successfully removed from panel.",
+                "intervention_id": str(instance.intervention_id),
+                "intervention_name": instance.intervention.intervention_name,
+            },
+            status=status.HTTP_200_OK,
+        )
+
 
     def list(self, request, *args, **kwargs):
         return Response(TopicPriorityService.fetch())
@@ -1109,7 +1156,6 @@ class CriteriaAppraisalScoreViewSet(viewsets.ModelViewSet):
                 "comment": vd.get("comment", ""),
             }],
         )[0]
-        # bind instance so the response serializer can render it
         serializer.instance = instance
  
  

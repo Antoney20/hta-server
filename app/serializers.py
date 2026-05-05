@@ -380,70 +380,76 @@ class CriteriaAppraisalToolWriteSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("Score must be between 0 and 5.")
         return value
 
-
 class CriteriaAppraisalScoreCreateSerializer(serializers.ModelSerializer):
     """POST / bulk — reviewer injected from request.user."""
- 
+
     class Meta:
         model = CriteriaAppraisalScore
         fields = ["id", "intervention", "criteria", "score", "comment"]
         read_only_fields = ["id"]
- 
+
     def validate(self, attrs):
         comment = (attrs.get("comment") or "").strip()
         score = attrs.get("score")
-        criteria = attrs.get("criteria")
- 
+
         if comment and not score:
             raise serializers.ValidationError(
                 {"score": "A score must be provided when a comment is given."}
             )
- 
-        if criteria and score:
-            valid = criteria.scores  # dict of valid options on the model
-            if valid and score not in valid:
-                raise serializers.ValidationError(
-                    {"score": f"'{score}' is not valid. Options: {list(valid.keys())}."}
-                )
- 
+
+        # Validate score_value is within 0..criteria.score (the max)
+        criteria = attrs.get("criteria")
+        if criteria and score and isinstance(score, dict):
+            score_value = score.get("score_value")
+            max_score = criteria.score  # IntegerField — the ceiling
+            if score_value is not None and max_score is not None:
+                if not (0 <= int(score_value) <= int(max_score)):
+                    raise serializers.ValidationError(
+                        {
+                            "score": (
+                                f"score_value {score_value} is out of range. "
+                                f"Must be between 0 and {max_score}."
+                            )
+                        }
+                    )
+
         return attrs
  
- 
 class CriteriaAppraisalScoreSerializer(serializers.ModelSerializer):
-    """Full read serializer."""
- 
     reviewer_name = serializers.SerializerMethodField()
     reviewer_email = serializers.SerializerMethodField()
     intervention_name = serializers.SerializerMethodField()
+    intervention_description = serializers.SerializerMethodField()
     criteria_name = serializers.SerializerMethodField()
- 
+
     class Meta:
         model = CriteriaAppraisalScore
         fields = [
             "id",
             "reviewer", "reviewer_name", "reviewer_email",
-            "intervention", "intervention_name",
+            "intervention", "intervention_name", "intervention_description",
             "criteria", "criteria_name",
             "score", "comment",
             "is_rescored", "rescored_by",
             "created_at", "updated_at",
         ]
         read_only_fields = fields
- 
+
     def get_reviewer_name(self, obj) -> str:
         u = obj.reviewer
         return f"{u.first_name} {u.last_name}".strip() or u.username
- 
+
     def get_reviewer_email(self, obj) -> str:
         return obj.reviewer.email
- 
+
     def get_intervention_name(self, obj) -> str:
         return getattr(obj.intervention, "intervention_name", str(obj.intervention))
- 
+
+    def get_intervention_description(self, obj) -> str | None:
+        return getattr(obj.intervention, "description", None)
+
     def get_criteria_name(self, obj) -> str:
         return obj.criteria.criteria
- 
-
 
 class AppraisalCriteriaEvidenceSerializer(serializers.ModelSerializer):
     created_by_name    = serializers.SerializerMethodField()
@@ -451,13 +457,14 @@ class AppraisalCriteriaEvidenceSerializer(serializers.ModelSerializer):
     reference_number = serializers.CharField(
         source="intervention.reference_number", read_only=True
     )
+    system_categories = serializers.SerializerMethodField()
     # documents          = AppraisalEvidenceDocumentSerializer(many=True, read_only=True)
     # images             = AppraisalEvidenceImageSerializer(many=True, read_only=True)
  
     class Meta:
         model  = AppraisalCriteriaEvidence
         fields = [
-            "id", "intervention", "reference_number", "intervention_name", "created_by", "created_by_name",
+            "id", "intervention", "reference_number", "intervention_name","system_categories", "created_by", "created_by_name",
             "brief_info",
             "clinical_effectiveness",
             "safety",
@@ -492,6 +499,11 @@ class AppraisalCriteriaEvidenceSerializer(serializers.ModelSerializer):
         return getattr(obj.intervention, "intervention_name", str(obj.intervention))
     
   
+    def get_system_categories(self, obj):
+        return list(
+            obj.intervention.system_categories
+            .values_list("system_category__name", flat=True)
+        )
 class AppraisalCriteriaEvidenceWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model  = AppraisalCriteriaEvidence

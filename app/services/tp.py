@@ -46,10 +46,6 @@ class TopicPriorityService:
     - decision: always set — 'Pending' sentinel for rows without a formal decision
     """
 
-    # ------------------------------------------------------------------ #
-    #  Internal query helpers                                              #
-    # ------------------------------------------------------------------ #
-
     @staticmethod
     def _score_count_subquery():
         return (
@@ -135,10 +131,6 @@ class TopicPriorityService:
             "name": obj["name"],
             "description": obj["description"],
         }
-
-    # ------------------------------------------------------------------ #
-    #  Payload assembly                                                    #
-    # ------------------------------------------------------------------ #
 
     @staticmethod
     def _build_payload(status_data, scored_only_interventions) -> dict:
