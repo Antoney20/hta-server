@@ -19,6 +19,7 @@ from .views import (
     InterventionSystemCategoryViewSet,
     InterventionScoreViewSet,
     TopicPriorityViewSet,
+    UsersListView,
     WeightingReportView,
     search_interventions,
 )
@@ -49,6 +50,7 @@ router.register(r"sub-activities", SubActivityViewSet, basename="sub-activities"
 # urlpatterns = router.urls
 urlpatterns = [
     path("", include(router.urls)),
+    path("users/", UsersListView.as_view()),
     path("scoring-report/", ScoringReportView.as_view(), name="scoring-report"),
     path("interventions/search/", search_interventions),
     path("weighting/", WeightingReportView.as_view(), name="weighting-report"),

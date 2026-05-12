@@ -528,7 +528,7 @@ class UrgencyLevel(models.TextChoices):
     LOW = "low", "Low"
     MEDIUM = "medium", "Medium"
     HIGH = "high", "High"
-    CRITICAL = "critical", "Critical"
+    URGENT = "urgent", "Urgent"
  
  
 class StatusChoice(models.TextChoices):

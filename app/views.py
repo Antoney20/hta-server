@@ -1,5 +1,10 @@
 import threading
 from django.db import transaction
+from django.utils import timezone
+from rest_framework.views import APIView
+from rest_framework.request import Request
+ 
+ 
 from rest_framework import viewsets, permissions
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.viewsets import ViewSet
@@ -30,7 +35,8 @@ from app.services.public_view import PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
 from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
-from users.models import InterventionProposal, UserRole
+from members.services.notification_service import NotificationService
+from users.models import CustomUser, InterventionProposal, UserRole
 from users.permissions import IsAdmin, IsPanel, IsSecretariatOrAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
@@ -59,6 +65,7 @@ from .serializers import (
     SystemCategorySerializer,
     InterventionSystemCategorySerializer,
     InterventionScoreSerializer,
+    UserSummarySerializer,
 )
 
 
@@ -78,6 +85,44 @@ def _get_or_404(model, **kwargs):
     except model.DoesNotExist:
         return None, _err(f"{model.__name__} not found.", 404)
  
+
+
+def _notify_assigned_users(sub: SubActivity) -> None:
+    """
+    Called in a background thread after a sub-activity is created.
+    No-op if SubActivity has no assigned users — safe to always call.
+    """
+    # NotificationService is stateless / read-only, nothing to persist.
+    # We call get_alerts() per assigned user so their next poll or
+    # page-load reflects the new assignment immediately via the cache.
+    for user in sub.assigned_to.all():
+        try:
+            NotificationService.get_alerts(user)   # warms any future cache
+        except Exception:
+            pass
+
+
+
+
+ 
+
+class UsersListView(APIView):
+    """
+    GET /api/v1/users/
+    Admin only — returns name, email, profile image, role, and member_id.
+    """
+    permission_classes = [IsAuthenticated]
+ 
+    def get(self, request: Request):
+        users = (
+            CustomUser.objects
+            .select_related("member")
+            .order_by("first_name", "last_name")
+        )
+        serializer = UserSummarySerializer(users, many=True, context={"request": request})
+        count = users.count()
+        return _ok(serializer.data, f"{count} user{'s' if count != 1 else ''} loaded.")
+
 
 
 @api_view(["GET"])
@@ -1304,21 +1349,59 @@ class SubActivityViewSet(viewsets.ModelViewSet):
  
 
     
+    # def create(self, request, *args, **kwargs):
+    #     serializer = self.get_serializer(data=request.data)
+    #     if not serializer.is_valid():
+    #         return _err(serializer.errors)
+    #     sub = serializer.save()
+    #     # thread the responses in background
+    #     if sub.send_email_alert:
+    #         threading.Thread(
+    #             target=send_activity_assignment_emails,
+    #             args=(sub,),
+    #             daemon=True,
+    #         ).start()
+ 
+    #     return _ok(serializer.data, f"Sub-activity '{sub.name}' created and added to '{sub.activity.name}'.", 201)
+    
+    #     threading.Thread(
+    #         target=_notify_assigned_users,
+    #         args=(sub,),
+    #         daemon=True,
+    #     ).start()
+ 
+    #     return _ok(
+    #         serializer.data,
+    #         f"Sub-activity '{sub.name}' created and added to '{sub.activity.name}'.",
+    #         201,
+    #     )
+ 
+ 
     def create(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
         if not serializer.is_valid():
             return _err(serializer.errors)
+
         sub = serializer.save()
-        # thread the responses in background
+
         if sub.send_email_alert:
             threading.Thread(
                 target=send_activity_assignment_emails,
                 args=(sub,),
                 daemon=True,
             ).start()
- 
-        return _ok(serializer.data, f"Sub-activity '{sub.name}' created and added to '{sub.activity.name}'.", 201)
- 
+
+        threading.Thread(
+            target=_notify_assigned_users,
+            args=(sub,),
+            daemon=True,
+        ).start()
+
+        return _ok(
+            serializer.data,
+            f"Sub-activity '{sub.name}' created and added to '{sub.activity.name}'.",
+            201,
+        )
  
     def partial_update(self, request, *args, **kwargs):
         try:

@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from users.models import InterventionProposal
+from users.models import CustomUser, InterventionProposal
 from .models import Activity, AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
@@ -12,6 +12,39 @@ class SelectionToolSerializer(serializers.ModelSerializer):
         model = SelectionTool
         fields = "__all__"
 
+
+ 
+class UserSummarySerializer(serializers.ModelSerializer):
+    full_name  = serializers.SerializerMethodField()
+    member_id  = serializers.SerializerMethodField()
+    profile_image = serializers.SerializerMethodField()
+ 
+    class Meta:
+        model  = CustomUser
+        fields = [
+            "id",           
+            "member_id",    
+            "full_name",
+            "email",
+            "profile_image",
+            "role",
+            "status",
+            "is_active",
+        ]
+ 
+    def get_full_name(self, obj) -> str:
+        parts = filter(None, [obj.first_name, obj.last_name])
+        return " ".join(parts) or obj.username
+ 
+    def get_member_id(self, obj) -> int | None:
+        member = getattr(obj, "member", None)
+        return member.id if member else None
+ 
+    def get_profile_image(self, obj) -> str | None:
+        if not obj.profile_image:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(obj.profile_image.url) if request else obj.profile_image.url
 
 class SystemCategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -600,7 +633,6 @@ class ActivitySerializer(serializers.ModelSerializer):
  
 
 class SubActivitySerializer(serializers.ModelSerializer):
-    # Explicitly use all() to bypass any custom manager that may filter users
     assigned_to = serializers.PrimaryKeyRelatedField(
         many=True,
         queryset=User.objects.all(),
@@ -612,7 +644,6 @@ class SubActivitySerializer(serializers.ModelSerializer):
         read_only_fields = ("hta_id", "created_at", "completed_at", "completed_by")
  
     def validate_assigned_to(self, value):
-        """Coerce any string PKs to int so '2' and 2 both work."""
         try:
             return [int(v) if not hasattr(v, 'pk') else v for v in value]
         except (TypeError, ValueError):
