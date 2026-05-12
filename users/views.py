@@ -959,10 +959,21 @@ def user_me(request):
 
 
 
+
 class InterventionProposalListView(ListAPIView):
     queryset = InterventionProposal.objects.all()
     serializer_class = InterventionProposalSerializer
-    
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request, *args, **kwargs):
+        try:
+            return super().list(request, *args, **kwargs)
+        except Exception as e:
+            logger.error(f"Error listing proposals: {e}")
+            return Response(
+                {'detail': 'Failed to retrieve proposals.'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
     
 class InterventionProposalDetailView(RetrieveAPIView):
     queryset = InterventionProposal.objects.all()

@@ -1,8 +1,11 @@
 from rest_framework import serializers
 
 from users.models import InterventionProposal
-from .models import AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from django.contrib.auth import get_user_model
 
+ 
+User = get_user_model()
 
 class SelectionToolSerializer(serializers.ModelSerializer):
     class Meta:
@@ -587,3 +590,44 @@ class AppraisalCriteriaEvidenceWriteSerializer(serializers.ModelSerializer):
 #         read_only_fields = ["id"]
  
  
+
+class ActivitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Activity
+        fields = "__all__"
+        read_only_fields = ("created_at", "created_by")
+ 
+ 
+
+class SubActivitySerializer(serializers.ModelSerializer):
+    # Explicitly use all() to bypass any custom manager that may filter users
+    assigned_to = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=User.objects.all(),
+    )
+ 
+    class Meta:
+        model = SubActivity
+        fields = "__all__"
+        read_only_fields = ("hta_id", "created_at", "completed_at", "completed_by")
+ 
+    def validate_assigned_to(self, value):
+        """Coerce any string PKs to int so '2' and 2 both work."""
+        try:
+            return [int(v) if not hasattr(v, 'pk') else v for v in value]
+        except (TypeError, ValueError):
+            raise serializers.ValidationError("assigned_to must be a list of user IDs.")
+
+
+
+
+
+
+
+
+
+
+
+
+
+

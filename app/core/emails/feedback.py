@@ -14,10 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 def _build_context(intervention, category, status_update=None) -> dict:
-    """
-    Assemble template context from an InterventionProposal.
-    Optionally enriched with a specific InterventionStatusUpdate.
-    """
     submitter_name = getattr(intervention, "name", None) or (
         intervention.email.split("@")[0]
         if getattr(intervention, "email", None)
@@ -70,13 +66,12 @@ def send_feedback_email(intervention, category, status_update=None, sent_by=None
     ctx = _build_context(intervention, category, status_update)
 
     try:
-        # ── Step 1: render the subject line (may contain template vars) ──
         rendered_subject = Template(category.subject).render(Context(ctx))
 
-        # ── Step 2: render the DB body template ──────────────────────────
+        #  render the DB body template 
         rendered_body = Template(category.template).render(Context(ctx))
 
-        # ── Step 3: inject body into the on-disk base layout ─────────────
+        # inject body into the  base layout 
         #   mark_safe so the base template renders it as HTML, not escaped text
         layout_ctx = {**ctx, "body_content": mark_safe(rendered_body)}
         rendered_html = render_to_string("emails/feedback_base.html", layout_ctx)

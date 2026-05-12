@@ -1,6 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
+    ActivityViewSet,
     AdminScoreViewSet,
     AppraisalCriteriaEvidenceViewSet,
     CriteriaAppraisalScoreViewSet,
@@ -13,6 +14,7 @@ from .views import (
     PublicProposalViewSet,
     ScoringReportView,
     SelectionToolViewSet,
+    SubActivityViewSet,
     SystemCategoryViewSet,
     InterventionSystemCategoryViewSet,
     InterventionScoreViewSet,
@@ -37,6 +39,8 @@ router.register(r"feedback-email-logs",  FeedbackEmailLogViewSet,    basename="f
 router.register(r"appraisal-criteria", CriteriaAppraisalToolViewSet, basename="appraisal-criteria")
 router.register(r"appraisal-scores",   CriteriaAppraisalScoreViewSet, basename="appraisal-scores")
 router.register(r"appraisal-evidence", AppraisalCriteriaEvidenceViewSet, basename="appraisal-evidence",)
+router.register(r"activities", ActivityViewSet, basename="activities")
+router.register(r"sub-activities", SubActivityViewSet, basename="sub-activities")
  
 
 

@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, IntegrityError, transaction
 # Create your models here.
 import uuid
 from django.contrib.auth import get_user_model
@@ -519,6 +519,84 @@ class AppraisalEvidenceImage(models.Model):
  
     def __str__(self):
         return f"Image — {self.evidence} ({self.caption or 'no caption'})"
+    
+    
+    
+
+ 
+class UrgencyLevel(models.TextChoices):
+    LOW = "low", "Low"
+    MEDIUM = "medium", "Medium"
+    HIGH = "high", "High"
+    CRITICAL = "critical", "Critical"
+ 
+ 
+class StatusChoice(models.TextChoices):
+    PENDING = "pending", "Pending"
+    IN_PROGRESS = "in_progress", "In Progress"
+    COMPLETED = "completed", "Completed"
+    CANCELLED = "cancelled", "Cancelled"
+ 
+ 
+class Activity(models.Model):
+    name = models.CharField(max_length=255, db_index=True)
+    urgency = models.CharField(max_length=20, choices=UrgencyLevel.choices, default=UrgencyLevel.MEDIUM, db_index=True)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="activity_owner")
+ 
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=[ "urgency"]),
+        ]
+ 
+
+    def __str__(self):
+        return f" {self.name}"
+ 
+ 
+class SubActivity(models.Model):
+    hta_id = models.CharField(max_length=20, unique=True, editable=False, db_index=True,null=True,blank=True)
+    activity = models.ForeignKey(Activity, on_delete=models.CASCADE, related_name="sub_activities", db_index=True)
+    name = models.CharField(max_length=255)
+    urgency = models.CharField(max_length=20, choices=UrgencyLevel.choices, default=UrgencyLevel.MEDIUM)
+    start_date = models.DateField(null=True, blank=True)
+    end_date = models.DateField(null=True, blank=True)
+    assigned_to = models.ManyToManyField(User, related_name="sub_activities", blank=True)
+    status = models.CharField(max_length=20, choices=StatusChoice.choices, default=StatusChoice.PENDING, db_index=True)
+    notes = models.TextField(blank=True)
+    send_email_alert = models.BooleanField(default=False)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    completed_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="completed_sub_activities")
+    created_at = models.DateTimeField(auto_now_add=True)
+ 
+    class Meta:
+        ordering = ["created_at"]
+ 
+
+
+
+    def save(self, *args, **kwargs):
+
+        is_new = self.pk is None
+
+        # First save WITHOUT hta_id
+        super().save(*args, **kwargs)
+
+        # Generate once after ID exists
+        if is_new and not self.hta_id:
+
+            generated_id = f"HTA-{self.pk:04d}"
+
+            type(self).objects.filter(pk=self.pk).update(
+                hta_id=generated_id
+            )
+
+            self.hta_id = generated_id
+
+    def __str__(self):
+        return f"{self.hta_id} — {self.name}"
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
@@ -526,4 +604,11 @@ auditlog.register(InterventionSystemCategory)
 auditlog.register(InterventionScore)
 auditlog.register(CriteriaInformation)
 auditlog.register(DecisionType)
+auditlog.register(CriteriaAppraisalScore)
+auditlog.register(FeedbackEmailLog)
+auditlog.register(CriteriaAppraisalTool)
 auditlog.register(InterventionStatusUpdate)
+auditlog.register(AppraisalCriteriaEvidence)
+auditlog.register(Activity)
+auditlog.register(SubActivity)
+

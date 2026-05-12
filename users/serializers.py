@@ -327,6 +327,21 @@ class UserMeSerializer(serializers.ModelSerializer):
 #         return proposal
 
 
+# class ProposalDocumentSerializer(serializers.ModelSerializer):
+#     document_url = serializers.SerializerMethodField()
+    
+#     class Meta:
+#         model = ProposalDocument
+#         fields = ['id', 'document', 'document_url', 'original_name', 'is_public']
+    
+#     def get_document_url(self, obj):
+#         request = self.context.get('request')
+#         if obj.document and hasattr(obj.document, 'url'):
+#             if request:
+#                 return request.build_absolute_uri(obj.document.url)
+#             return obj.document.url
+#         return None
+
 class ProposalDocumentSerializer(serializers.ModelSerializer):
     document_url = serializers.SerializerMethodField()
     
@@ -336,12 +351,19 @@ class ProposalDocumentSerializer(serializers.ModelSerializer):
     
     def get_document_url(self, obj):
         request = self.context.get('request')
-        if obj.document and hasattr(obj.document, 'url'):
-            if request:
-                return request.build_absolute_uri(obj.document.url)
-            return obj.document.url
-        return None
 
+        if not request or not request.user.is_authenticated:
+            return None
+
+        # Only secretariat and admin can see document URLs
+        allowed_roles = ['secretariat', 'admin']
+        if request.user.role not in allowed_roles:
+            return 'Access denied.'
+
+        if obj.document and hasattr(obj.document, 'url'):
+            return request.build_absolute_uri(obj.document.url)
+            
+        return None
 
 def _mask(value: str) -> str:
     """

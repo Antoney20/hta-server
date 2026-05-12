@@ -1,3 +1,4 @@
+import threading
 from django.db import transaction
 from rest_framework import viewsets, permissions
 from rest_framework.exceptions import PermissionDenied
@@ -23,6 +24,7 @@ from dataclasses import asdict
 from rest_framework.views import APIView
 from app.core.emails.feedback import send_feedback_email
 from app.core.services.feedback import FeedbackService
+from app.core.emails.activity import send_activity_assignment_emails
 from app.services import criteria_info
 from app.services.public_view import PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
@@ -33,8 +35,9 @@ from users.permissions import IsAdmin, IsPanel, IsSecretariatOrAdmin, IsSecretar
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
+    ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
     AppraisalCriteriaEvidenceWriteSerializer,
     CriteriaAppraisalScoreCreateSerializer,
@@ -52,6 +55,7 @@ from .serializers import (
     InterventionStatusUpdateSerializer,
     InterventionStatusUpdateWriteSerializer,
     SelectionToolSerializer,
+    SubActivitySerializer,
     SystemCategorySerializer,
     InterventionSystemCategorySerializer,
     InterventionScoreSerializer,
@@ -325,9 +329,6 @@ class InterventionProposalViewSet(viewsets.ModelViewSet):
 
         return qs
 
-    # ------------------------------------------------------------------
-    # Rescore window management
-    # ------------------------------------------------------------------
 
     @action(detail=True, methods=["post"], url_path="open-rescore")
     def open_rescore(self, request, pk=None):
@@ -698,7 +699,6 @@ class WeightingReportView(APIView):
 
 
 
-# new public proposals viewset, should allow anyone to see  for now.
 class PublicProposalViewSet(ViewSet):
     permission_classes = [AllowAny]
 
@@ -740,11 +740,6 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAdmin],
     )
     def bulk_move_to_panel(self, request):
-        """
-        Move multiple interventions to panel by intervention_id.
-        Works for both rows that already have a status update and scored-only rows.
-
-        """
         intervention_ids = request.data.get("intervention_ids")
 
         if not intervention_ids or not isinstance(intervention_ids, list):
@@ -768,10 +763,6 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
         permission_classes=[IsAdmin],
     )
     def move_to_panel(self, request, pk=None):
-        """
-        Move a single intervention to panel by status update pk.
-        Delegates to service so scored-only rows are handled consistently.
-        """
         instance = self.get_object()
         result = TopicPriorityService.move_to_panel(
             str(instance.intervention_id), request.user
@@ -813,7 +804,6 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
         instance.updated_by = request.user
         instance.save(update_fields=["move_to_panel", "updated_by", "updated_at"])
 
-        # Invalidate cache if your service has it
         TopicPriorityService.invalidate()
 
         return Response(
@@ -1035,8 +1025,7 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         FeedbackService.invalidate()
         log = self._qs().filter(intervention=intervention, category=category).first()
         return _ok(FeedbackEmailLogSerializer(log).data if log else None, "Email sent successfully.")
- 
-    # ── Resend ────────────────────────────────────────────────────
+
     @action(detail=True, methods=["post"], url_path="resend")
     def resend_email(self, request, pk=None):
         """Re-send an existing log entry. Creates a fresh log — does not mutate the original."""
@@ -1048,7 +1037,6 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         ).first()
         return _ok(FeedbackEmailLogSerializer(log).data if log else None, message)
  
-    # ── Delete log ────────────────────────────────────────────────
     @action(detail=True, methods=["delete"], url_path="delete")
     def delete_log(self, request, pk=None):
         instance, err = _get_or_404(FeedbackEmailLog, pk=pk)
@@ -1057,7 +1045,6 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         FeedbackService.invalidate()
         return _ok(None, "Email log deleted.")
  
-    # ── Bulk send ─────────────────────────────────────────────────
     @action(detail=False, methods=["post"], url_path="bulk-send")
     def bulk_send(self, request):
         cid  = request.data.get("category")
@@ -1095,12 +1082,6 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
     
 
 class CriteriaAppraisalToolViewSet(viewsets.ModelViewSet):
-    """
-    Manage scoring criteria and their score options.
- 
-    - GET  (list / retrieve) — any authenticated user
-    - POST / PUT / PATCH / DELETE — admin and secretariat only
-    """
  
     queryset = CriteriaAppraisalTool.objects.all().order_by("criteria")
  
@@ -1117,13 +1098,6 @@ class CriteriaAppraisalToolViewSet(viewsets.ModelViewSet):
 
 
 class CriteriaAppraisalScoreViewSet(viewsets.ModelViewSet):
-    """
-    Appraisal scores per criterion per intervention.
- 
-    GET    — reviewer sees only their own rows; filter with ?intervention=<uuid>
-    POST   — admin / panel only (single score via service)
-    bulk   — POST /bulk/  admin / panel only (atomic, all-or-nothing)
-    """
  
     permission_classes = [permissions.IsAuthenticated]
  
@@ -1172,12 +1146,6 @@ class CriteriaAppraisalScoreViewSet(viewsets.ModelViewSet):
  
     @action(detail=False, methods=["post"], url_path="bulk")
     def bulk_create(self, request):
-        """
-        POST /appraisal-scores/bulk/
-        { "intervention_id": "<uuid>", "scores": [ { criteria_id, score, comment? } ] }
- 
-        Delegates entirely to scoring_p.bulk_create_scores — atomic, no partial saves.
-        """
         self._assert_can_score(request.user)
  
         intervention_id = request.data.get("intervention_id")
@@ -1255,8 +1223,146 @@ class AppraisalCriteriaEvidenceViewSet(viewsets.ModelViewSet):
         is_owner = instance.created_by == user
         is_admin = user.has_role(UserRole.ADMIN)
         if not (is_owner or is_admin):
-            raise PermissionDenied("You can only delete your own evidence records.")
+            raise PermissionDenied("You are not authorized to perform this action.")
         instance.delete()
 
 
 
+class ActivityViewSet(viewsets.ModelViewSet):
+    serializer_class = ActivitySerializer
+    http_method_names = ["get", "post", "delete", "head", "options"]
+ 
+    def get_permissions(self):
+        if self.action in ("create", "destroy"):
+            return [IsAdmin()]
+        return [IsAuthenticatedAndActive()]
+ 
+    def get_queryset(self):
+        user = self.request.user
+        if IsAdmin().has_permission(self.request, self):
+            return Activity.objects.all()
+        return Activity.objects.filter(sub_activities__assigned_to=user).distinct()
+ 
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+        if not qs.exists():
+            return _ok([], "No activities found.")
+        return _ok(self.get_serializer(qs, many=True).data, f"{qs.count()} activit{'y' if qs.count() == 1 else 'ies'} loaded.")
+ 
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            activity = self.get_object()
+        except Exception:
+            return _err("This activity does not exist or you do not have access to it.", 404)
+        return _ok(self.get_serializer(activity).data, f"Activity '{activity.name}' loaded.")
+ 
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return _err(serializer.errors)
+        activity = serializer.save(created_by=request.user)
+        return _ok(serializer.data, f"Activity '{activity.name}' created successfully.", 201)
+ 
+    def destroy(self, request, *args, **kwargs):
+        try:
+            activity = self.get_object()
+        except Exception:
+            return _err("Activity not found. It may have already been deleted.", 404)
+        name = activity.name
+        activity.delete()
+        return _ok(None, f"Activity '{name}' and all its sub-activities have been permanently deleted.")
+ 
+ 
+class SubActivityViewSet(viewsets.ModelViewSet):
+    serializer_class = SubActivitySerializer
+    http_method_names = ["get", "post", "patch", "delete", "head", "options"]
+ 
+    def get_permissions(self):
+        if self.action in ("create", "destroy"):
+            return [IsAdmin()]
+        return [IsAuthenticatedAndActive()]
+ 
+    def get_queryset(self):
+        user = self.request.user
+        qs = SubActivity.objects.select_related("activity", "completed_by").prefetch_related("assigned_to")
+        if IsAdmin().has_permission(self.request, self):
+            return qs.all()
+        return qs.filter(assigned_to=user)
+ 
+    def list(self, request, *args, **kwargs):
+        qs = self.get_queryset()
+        if not qs.exists():
+            return _ok([], "No sub-activities assigned to you at the moment.")
+        return _ok(self.get_serializer(qs, many=True).data, f"{qs.count()} sub-activit{'y' if qs.count() == 1 else 'ies'} loaded.")
+ 
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            sub = self.get_object()
+        except Exception:
+            return _err("This sub-activity does not exist or you are not assigned to it.", 404)
+        return _ok(self.get_serializer(sub).data, f"Sub-activity '{sub.name}' loaded.")
+ 
+
+    
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return _err(serializer.errors)
+        sub = serializer.save()
+        # thread the responses in background
+        if sub.send_email_alert:
+            threading.Thread(
+                target=send_activity_assignment_emails,
+                args=(sub,),
+                daemon=True,
+            ).start()
+ 
+        return _ok(serializer.data, f"Sub-activity '{sub.name}' created and added to '{sub.activity.name}'.", 201)
+ 
+ 
+    def partial_update(self, request, *args, **kwargs):
+        try:
+            sub = self.get_object()
+        except Exception:
+            return _err("Sub-activity not found or you are not assigned to it.", 404)
+ 
+        if sub.status == "completed":
+            return _err(f"'{sub.name}' is already completed and cannot be edited.")
+ 
+        serializer = self.get_serializer(sub, data=request.data, partial=True)
+        if not serializer.is_valid():
+            return _err(serializer.errors)
+        serializer.save()
+        return _ok(serializer.data, f"Sub-activity '{sub.name}' updated successfully.")
+ 
+    def destroy(self, request, *args, **kwargs):
+        try:
+            sub = self.get_object()
+        except Exception:
+            return _err("Sub-activity not found. It may have already been deleted.", 404)
+        name = sub.name
+        sub.delete()
+        return _ok(None, f"Sub-activity '{name}' has been permanently deleted.")
+ 
+    @action(detail=True, methods=["patch"], url_path="complete")
+    def complete(self, request, pk=None):
+        try:
+            sub = self.get_object()
+        except Exception:
+            return _err("Sub-activity not found or you are not assigned to it.", 404)
+ 
+        if not IsAdmin().has_permission(request, self):
+            if not sub.assigned_to.filter(pk=request.user.pk).exists():
+                return _err("You can only complete sub-activities that are assigned to you.", 403)
+ 
+        if sub.status == "completed":
+            return _err(
+                f"'{sub.name}' was already completed"
+            )
+ 
+        sub.status = "completed"
+        sub.completed_at = timezone.now()
+        sub.completed_by = request.user
+        sub.save(update_fields=["status", "completed_at", "completed_by"])
+        return _ok(self.get_serializer(sub).data, f"'{sub.name}' marked as completed. Well done!")
+ 

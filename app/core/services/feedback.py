@@ -127,7 +127,6 @@ class FeedbackService:
                 sv = 0
             score_map[iid] = score_map.get(iid, 0) + sv
 
-        # ── latest status update per intervention ─────────────────────
         latest_status: dict[str, object] = {}
         for su in (
             InterventionStatusUpdate.objects
@@ -138,7 +137,6 @@ class FeedbackService:
             if iid not in latest_status:
                 latest_status[iid] = su
 
-        # ── feedback log aggregates ───────────────────────────────────
         log_agg: dict[str, dict] = {}
         for row in (
             FeedbackEmailLog.objects
@@ -150,7 +148,6 @@ class FeedbackService:
                 "last_sent": row["last_sent"].isoformat() if row["last_sent"] else None,
             }
 
-        # ── system category names per intervention ────────────────────
         cat_map: dict[str, list[str]] = {}
         for isc in (
             InterventionSystemCategory.objects
@@ -161,7 +158,6 @@ class FeedbackService:
                 isc.system_category.name
             )
 
-        # ── proposals ─────────────────────────────────────────────────
         proposals = (
             InterventionProposal.objects
             .only("id", "intervention_name", "reference_number", "email", "submitted_at")
@@ -216,8 +212,7 @@ class FeedbackService:
             (s for s in cls._cached_statuses() if s.intervention_id == intervention_id),
             None,
         )
-
-    # ── core single send ──────────────────────────────────────────────
+        
     @classmethod
     def _send_one(
         cls,
@@ -247,7 +242,6 @@ class FeedbackService:
             logger.exception("Unexpected error sending feedback email for %s", iid)
             return SendResult(iid, success=False, error=str(exc))
 
-    # ── public: single send ───────────────────────────────────────────
     @classmethod
     def send(
         cls,
