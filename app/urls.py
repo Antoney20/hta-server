@@ -11,6 +11,7 @@ from .views import (
     FeedbackCategoryViewSet,
     FeedbackEmailLogViewSet,
     InterventionProposalViewSet,
+    InterventionScoringWindowViewSet,
     PublicProposalViewSet,
     ScoringReportView,
     SelectionToolViewSet,
@@ -32,7 +33,7 @@ router.register(r"criteria-information", CriteriaInformationViewSet, basename="c
 router.register("intervention-scores", InterventionScoreViewSet, basename="intervention-score")
 router.register(r"admin-report", AdminScoreViewSet, basename="admin-report")
 router.register(r"proposals",  PublicProposalViewSet, basename="public-proposals")
-router.register(r"re-open", InterventionProposalViewSet, basename="scoring-reopen")
+# router.register(r"re-open", InterventionProposalViewSet, basename="scoring-reopen")
 router.register(r"topic-priority", TopicPriorityViewSet, basename="topic-priority")
 router.register(r"decision-types", DecisionTypeViewSet, basename="decision-type")
 router.register(r"feedback-categories",  FeedbackCategoryViewSet,    basename="feedback-category")
@@ -42,6 +43,7 @@ router.register(r"appraisal-scores",   CriteriaAppraisalScoreViewSet, basename="
 router.register(r"appraisal-evidence", AppraisalCriteriaEvidenceViewSet, basename="appraisal-evidence",)
 router.register(r"activities", ActivityViewSet, basename="activities")
 router.register(r"sub-activities", SubActivityViewSet, basename="sub-activities")
+router.register(r"scoring-windows", InterventionScoringWindowViewSet, basename="scoring-window")
  
 
 

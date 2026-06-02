@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -650,7 +650,15 @@ class SubActivitySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("assigned_to must be a list of user IDs.")
 
 
+class InterventionScoringWindowSerializer(serializers.ModelSerializer):
+    status = serializers.CharField(read_only=True)
+    is_open = serializers.BooleanField(read_only=True)
+    effective_close_at = serializers.DateTimeField(read_only=True)
 
+    class Meta:
+        model = InterventionScoringWindow
+        fields = "__all__"
+        read_only_fields = ("created_at", "updated_at", "created_by", "updated_by")
 
 
 

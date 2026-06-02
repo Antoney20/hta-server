@@ -30,6 +30,7 @@ from rest_framework.views import APIView
 from app.core.emails.feedback import send_feedback_email
 from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
+from app.core.services.scoring_window import ScoringWindowService
 from app.services import criteria_info
 from app.services.public_view import PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
@@ -58,6 +59,7 @@ from .serializers import (
     FeedbackCategoryWriteSerializer,
     FeedbackEmailLogSerializer,
     InterventionScoreCreateSerializer,
+    InterventionScoringWindowSerializer,
     InterventionStatusUpdateSerializer,
     InterventionStatusUpdateWriteSerializer,
     SelectionToolSerializer,
@@ -1448,4 +1450,70 @@ class SubActivityViewSet(viewsets.ModelViewSet):
         sub.completed_by = request.user
         sub.save(update_fields=["status", "completed_at", "completed_by"])
         return _ok(self.get_serializer(sub).data, f"'{sub.name}' marked as completed. Well done!")
+ 
+ 
+ 
+ 
+
+
+class InterventionScoringWindowViewSet(viewsets.ModelViewSet):
+    serializer_class = InterventionScoringWindowSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        params = {k: self.request.query_params.get(k) for k in ("intervention", "ref", "level")}
+        return ScoringWindowService.list(params)
+
+    def list(self, request, *args, **kwargs):
+        qs = self.filter_queryset(self.get_queryset())
+        return _ok(self.get_serializer(qs, many=True).data, "Scoring windows fetched.")
+
+    def retrieve(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+        except Exception:
+            return _err("Scoring window not found.", 404)
+        return _ok(self.get_serializer(instance).data, "Scoring window fetched.")
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        if not serializer.is_valid():
+            return _err("Invalid data.", 400, serializer.errors)
+        try:
+            window = ScoringWindowService.create(request.user, serializer)
+        except PermissionDenied as e:
+            return _err(str(e), 403)
+        return _ok(self.get_serializer(window).data, "Scoring window created.", 201)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        try:
+            instance = self.get_object()
+        except Exception:
+            return _err("Scoring window not found. It may have already been deleted.", 404)
+
+        serializer = self.get_serializer(instance, data=request.data, partial=partial)
+        if not serializer.is_valid():
+            return _err("Invalid data.", 400, serializer.errors)
+        try:
+            window = ScoringWindowService.update(request.user, serializer)
+        except PermissionDenied as e:
+            return _err(str(e), 403)
+        return _ok(self.get_serializer(window).data, "Scoring window updated.")
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        try:
+            instance = self.get_object()
+        except Exception:
+            return _err("Scoring window not found. It may have already been deleted.", 404)
+        label = str(instance)
+        try:
+            ScoringWindowService.delete(request.user, instance)
+        except PermissionDenied as e:
+            return _err(str(e), 403)
+        return _ok(None, f"Scoring window '{label}' deleted.")
  

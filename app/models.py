@@ -1,4 +1,7 @@
 from django.db import models, IntegrityError, transaction
+from datetime import timedelta
+from django.core.exceptions import ValidationError
+from django.utils import timezone
 # Create your models here.
 import uuid
 from django.contrib.auth import get_user_model
@@ -175,46 +178,13 @@ class DecisionType(models.Model):
 class InterventionStatusUpdate(models.Model):
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-
-    intervention = models.ForeignKey(
-        InterventionProposal,
-        on_delete=models.CASCADE,
-        related_name="status_updates",
-    )
-
-    decision = models.ForeignKey(
-        DecisionType,
-        on_delete=models.PROTECT,
-        null=True,
-        blank=True,
-        default=get_pending_decision, 
-        related_name="status_updates",
-        help_text="Formal HTA decision once reached.",
-    )
-
+    intervention = models.ForeignKey( InterventionProposal, on_delete=models.CASCADE, related_name="status_updates",)
+    decision = models.ForeignKey( DecisionType, on_delete=models.PROTECT, null=True, blank=True, default=get_pending_decision,  related_name="status_updates", help_text="Formal HTA decision once reached.", )
     decision_date = models.DateField(null=True, blank=True)
-
-    feedback = models.TextField(
-        blank=True,
-        help_text="Plain-language feedback visible to the submitter.",
-    )
-
-    additional_info = models.TextField(
-        blank=True,
-        help_text="More info supporting the decision.",
-    )
-
-    move_to_panel = models.BooleanField(
-        default=False,
-        help_text="Mark intervention to move to panel review.",
-    )
-    updated_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        related_name="intervention_status_updates",
-    )
-
+    feedback = models.TextField( blank=True, help_text="Plain-language feedback visible to the submitter.",)
+    additional_info = models.TextField( blank=True, help_text="More info supporting the decision.", )
+    move_to_panel = models.BooleanField(  default=False, help_text="Mark intervention to move to panel review.",)
+    updated_by = models.ForeignKey( User,  on_delete=models.SET_NULL, null=True, related_name="intervention_status_updates",)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -238,10 +208,7 @@ class FeedbackCategory(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    subject = models.CharField(
-        max_length=255,
-        help_text="Email subject line. You may use {{ decision_type }}, {{ submitter_name }}, etc.",
-    )
+    subject = models.CharField(  max_length=255, help_text="Email subject line. You may use {{ decision_type }}, {{ submitter_name }}, etc.",  )
     template = models.TextField(
         help_text=(
             "Full HTML email body. Available variables: "
@@ -597,6 +564,102 @@ class SubActivity(models.Model):
 
     def __str__(self):
         return f"{self.hta_id} — {self.name}"
+    
+
+class ScoringLevel(models.TextChoices):
+    PANEL = "panel", "Panel (SWG)"
+    APPRAISAL = "appraisal", "Appraisal"
+
+
+class InterventionScoringWindow(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    intervention = models.ForeignKey(InterventionProposal, on_delete=models.CASCADE,related_name="scoring_windows",)
+    level = models.CharField( max_length=20, choices=ScoringLevel.choices, db_index=True,)
+    starts_at = models.DateTimeField( help_text="When scoring opens for reviewers.", )
+    ends_at = models.DateTimeField( help_text="When the scoring window closes.", )
+    submission_delay_minutes = models.PositiveIntegerField( default=2, help_text=("Grace period in minutes after ends_at during which late "   "submissions are still accepted."), )
+    is_active = models.BooleanField( default=True, help_text="Set false to disable this window regardless of dates.",)
+    notes = models.TextField(blank=True)
+    created_by = models.ForeignKey( User, on_delete=models.SET_NULL, null=True, blank=True, related_name="scoring_windows_created",)
+    updated_by = models.ForeignKey( User, on_delete=models.SET_NULL, null=True, blank=True, related_name="scoring_windows_updated",)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("intervention", "level")
+        ordering = ["-created_at"]
+        indexes = [
+            models.Index(fields=["intervention", "level"]),
+            models.Index(fields=["starts_at"]),
+            models.Index(fields=["ends_at"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def __str__(self):
+        ref = getattr(self.intervention, "reference_number", None) or self.intervention_id
+        return f"{ref} — {self.get_level_display()} ({self.starts_at:%Y-%m-%d %H:%M} → {self.ends_at:%Y-%m-%d %H:%M})"
+
+    # ---------- derived ----------
+    @property
+    def effective_close_at(self):
+        """ends_at + grace period."""
+        return self.ends_at + timedelta(minutes=self.submission_delay_minutes)
+
+    @property
+    def status(self) -> str:
+        """
+        One of: 'disabled', 'scheduled', 'open', 'grace', 'closed'.
+        """
+        if not self.is_active:
+            return "disabled"
+        now = timezone.now()
+        if now < self.starts_at:
+            return "scheduled"
+        if now <= self.ends_at:
+            return "open"
+        if now <= self.effective_close_at:
+            return "grace"
+        return "closed"
+
+    @property
+    def is_open(self) -> bool:
+        """True if scoring is currently allowed (including grace period)."""
+        return self.status in ("open", "grace")
+
+    @property
+    def is_in_grace(self) -> bool:
+        return self.status == "grace"
+
+    @property
+    def time_remaining(self):
+        """timedelta until effective_close_at, or None if already closed."""
+        now = timezone.now()
+        if now >= self.effective_close_at:
+            return None
+        return self.effective_close_at - now
+
+    # ---------- validation ----------
+    def clean(self):
+        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+            raise ValidationError({"ends_at": "Must be after starts_at."})
+
+    # ---------- lookup helpers ----------
+    @classmethod
+    def get_window(cls, intervention, level: str):
+        """Fetch the window for an (intervention, level), or None."""
+        return cls.objects.filter(intervention=intervention, level=level).first()
+
+    @classmethod
+    def can_score(cls, intervention, level: str) -> bool:
+        """
+        Convenience check used by serializers/services before accepting a score.
+        Returns True if a window exists, is active, and is currently open.
+        """
+        window = cls.get_window(intervention, level)
+        return bool(window and window.is_open)
+
+
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
@@ -611,4 +674,4 @@ auditlog.register(InterventionStatusUpdate)
 auditlog.register(AppraisalCriteriaEvidence)
 auditlog.register(Activity)
 auditlog.register(SubActivity)
-
+auditlog.register(InterventionScoringWindow)
