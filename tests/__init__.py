@@ -4,19 +4,18 @@ tests/__init__.py
 Test suite for BPTAP  Server.
 
 Structure:
-    test_settings.py   — security & config sanity checks
-    test_urls.py       — URL routing & namespace smoke tests
-    test_auth.py       — JWT register / login / refresh / RBAC
-    test_security.py   — throttling, CORS, headers, injection probes
+    test/settings.py   — security & config sanity checks
+    test/urls.py       — URL routing & namespace smoke tests
+    test/security.py   — throttling, CORS, headers, injection probes
 
 Run all:
     python manage.py test tests
 
 Run a single module:
-    python manage.py test tests.test_auth
+    python manage.py test tests.settings
 
 Run a single test:
-    python manage.py test tests.test_auth.LoginTest.test_login_with_valid_credentials_returns_200_with_tokens
+    python manage.py test tests.security.ThrottlingTest.test_anon_throttle_triggers_after_limit
 
 With verbosity:
     python manage.py test tests -v 2

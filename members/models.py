@@ -156,7 +156,10 @@ class Task(models.Model):
         blank=True
     )
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='created_tasks')
-    
+    send_email_alert = models.BooleanField(
+        default=False,
+        help_text="If true, send an alert email to assigned users."
+    )
     # Dates
     due_date = models.DateField(null=True, blank=True)
     completed_at = models.DateTimeField(null=True, blank=True)

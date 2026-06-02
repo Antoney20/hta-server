@@ -271,80 +271,33 @@ class TaskAssignmentSerializer(serializers.ModelSerializer):
         model = TaskAssignment
         fields = ['user', 'assigned_by', 'assigned_at', 'notes']
 
-
 class TaskSerializer(serializers.ModelSerializer):
     created_by = UserSerializer(read_only=True)
     assignments = TaskAssignmentSerializer(many=True, read_only=True)
     assigned_user_ids = serializers.ListField(
-        child=serializers.IntegerField(), 
-        write_only=True, 
+        child=serializers.IntegerField(),
+        write_only=True,
         required=False,
-        help_text="List of user IDs to assign this task to"
+        default=list,
+        help_text="List of user IDs to assign this task to",
     )
     is_overdue = serializers.ReadOnlyField()
     is_completed = serializers.ReadOnlyField()
-    
+
     class Meta:
         model = Task
         fields = [
             'id', 'title', 'description', 'notes', 'status', 'priority',
             'due_date', 'completed_at', 'progress', 'position_x', 'position_y',
-            'created_at', 'updated_at', 'created_by', 'assignments', 'assigned_users',
-            'assigned_user_ids', 'is_overdue', 'is_completed'
+            'send_email_alert',
+            'created_at', 'updated_at',
+            'created_by', 'assignments', 'assigned_user_ids',
+            'is_overdue', 'is_completed',
         ]
-        read_only_fields = ['id', 'created_at', 'updated_at', 'completed_at']
-
-    def create(self, validated_data):
-        assigned_user_ids = validated_data.pop('assigned_user_ids', [])
-        validated_data['created_by'] = self.context['request'].user
-        
-        task = Task.objects.create(**validated_data)
-        
-        # Assign task to users if provided
-        if assigned_user_ids:
-            self._assign_users_to_task(task, assigned_user_ids)
-        
-        return task
-
-    def update(self, instance, validated_data):
-        assigned_user_ids = validated_data.pop('assigned_user_ids', None)
-        
-        # Update task fields
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
-        
-        # Handle completion
-        if validated_data.get('status') == TaskStatus.COMPLETED and not instance.completed_at:
-            instance.completed_at = timezone.now()
-        elif validated_data.get('status') != TaskStatus.COMPLETED:
-            instance.completed_at = None
-            
-        instance.save()
-        
-        # Update assignments if provided
-        if assigned_user_ids is not None:
-            # Remove existing assignments
-            instance.assignments.all().delete()
-            # Add new assignments
-            self._assign_users_to_task(instance, assigned_user_ids)
-        
-        return instance
-
-    def _assign_users_to_task(self, task, user_ids):
-        """Helper method to assign users to a task"""
-        request_user = self.context['request'].user
-        
-        for user_id in user_ids:
-            try:
-                user = CustomUser.objects.get(id=user_id, status='active')
-                TaskAssignment.objects.get_or_create(
-                    task=task,
-                    user=user,
-                    defaults={'assigned_by': request_user}
-                )
-            except CustomUser.DoesNotExist:
-                continue  # Skip invalid use
-            
+        read_only_fields = [
+            'id', 'created_at', 'updated_at', 'completed_at',
+            'created_by', 'assignments', 'is_overdue', 'is_completed',
+        ]
         
 class ChannelMembershipSerializer(serializers.ModelSerializer):
     user = UserSerializer(read_only=True)

@@ -9,7 +9,7 @@ from users.models import EmailLog
 logger = logging.getLogger(__name__)
 
 
-def send_confirmation_email(proposal):
+def   send_confirmation_email(proposal):
     """Send confirmation email for a proposal and log it in the database"""
     from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@bptap.com')
     reply_to = getattr(settings, 'DEFAULT_FROM_EMAIL', from_email)

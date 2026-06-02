@@ -121,25 +121,7 @@ class LoginSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True)
     
     
-    # def validate_username_or_email(self, value):
-    #     """
-    #     Sanitize and validate username/email input.
-    #     """
 
-    #     value = value.strip()
-
-    #     if not value:
-    #         raise serializers.ValidationError("This field cannot be empty.")
-
-    #     if "@" in value:
-    #         validator = EmailValidator()
-    #         try:
-    #             validator(value)
-    #         except Exception:
-    #             raise serializers.ValidationError("Enter a valid email address.")
-
-    #     return value.lower()
-    
     def validate_username_or_email(self, value):
         value = value.strip()
 

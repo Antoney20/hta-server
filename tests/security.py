@@ -1,9 +1,8 @@
 """
 
 Throttling, CORS, security headers, and middleware tests.
-These protect against abuse and misconfiguration in production.
 
-To run: python manage.py test tests.security
+Run: python manage.py test tests.security
 """
 
 from django.test import TestCase, override_settings
@@ -60,7 +59,7 @@ class ThrottlingTest(TestCase):
                     "429 response must include Retry-After header.",
                 )
                 return  # Test passed
-        # If we never got 429, note it but don't hard-fail (rate may be high)
+        # If we never got 429, note it but don't hard-fail
         self.skipTest("Throttle not triggered — increase hit count or lower rate.")
 
 
@@ -189,11 +188,11 @@ class ContentTypeTest(TestCase):
         content_type = r.get("Content-Type", "")
         if r.status_code not in [401, 403, 405]:
             self.skipTest("Endpoint redirected — cannot check content type.")
-        # On auth errors DRF should still return JSON
+        # expects to get JSON
         self.assertIn("application/json", content_type)
 
     def test_browsable_api_disabled_in_production(self):
-        """BrowsableAPIRenderer should not serve HTML to non-browser clients."""
+        """Shoul d not render HTML templates to the client."""
         r = self.client.get("/api/v1/", HTTP_ACCEPT="application/json")
         content_type = r.get("Content-Type", "")
         self.assertNotIn(

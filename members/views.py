@@ -1,3 +1,5 @@
+import threading
+
 from rest_framework import viewsets, status, permissions
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,6 +16,7 @@ from django.db import transaction
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAdminUser
 import logging
 
+from members.services.email import send_task_assignment_emails
 from members.services.notification_service import NotificationService
 from members.services.task_service import TaskService
 from users.models import CustomUser, UserRole
@@ -573,13 +576,34 @@ class TaskViewSet(viewsets.ModelViewSet):
         params = {k: self.request.query_params.get(k) for k in ("status", "priority", "due")}
         return TaskService.get_queryset(self.request.user, params)
 
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)  # ← was missing
-
+    # def perform_create(self, serializer):
+    #     task = serializer.save(created_by=self.request.user)
+    #     if task.send_email_alert and task.assigned_users.exists():
+    #         threading.Thread(
+    #             target=send_task_assignment_emails,
+    #             args=(task,),
+    #             daemon=True,
+    #         ).start()
+            
     @action(detail=True, methods=["post"])
     def complete(self, request, pk=None):
         task = TaskService.complete_task(request.user, self.get_object())
         return Response(self.get_serializer(task).data)
+    
+    def perform_create(self, serializer):
+        user_ids = serializer.validated_data.pop('assigned_user_ids', [])
+        task = serializer.save(created_by=self.request.user)
+
+        TaskService.sync_assignments(task, user_ids, self.request.user)
+        TaskService.sync_completion(task)
+
+    def perform_update(self, serializer):
+        user_ids = serializer.validated_data.pop('assigned_user_ids', None)
+        task = serializer.save()
+
+        if user_ids is not None:
+            TaskService.sync_assignments(task, user_ids, self.request.user)
+        TaskService.sync_completion(task)
 
     @action(detail=True, methods=["post"])
     def reopen(self, request, pk=None):

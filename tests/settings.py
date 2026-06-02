@@ -1,8 +1,7 @@
 """
 
-Security & configuration sanity checks.
-These catch misconfigurations before they reach production.
-Run with: python manage.py test tests.settings
+Security and config checks.
+Run : python manage.py test tests.settings
 """
 
 import os
@@ -11,7 +10,7 @@ from django.conf import settings
 
 
 class SecuritySettingsTest(TestCase):
-    """Critical security settings must be correctly configured."""
+    """ test security settings configuration."""
 
     def test_secret_key_is_set(self):
         self.assertTrue(settings.SECRET_KEY, "SECRET_KEY must not be empty.")
@@ -32,7 +31,6 @@ class SecuritySettingsTest(TestCase):
     def test_debug_is_false_in_production(self):
         """
         DEBUG=True in production exposes stack traces and config.
-        Override in CI via env: DEBUG=False.
         """
     
         if os.getenv("TEST_ENV") == "production":
