@@ -1,3 +1,4 @@
+import logging
 import threading
 from django.db import transaction
 from django.utils import timezone
@@ -30,6 +31,7 @@ from rest_framework.views import APIView
 from app.core.emails.feedback import send_feedback_email
 from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
+from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.core.services.scoring_window import ScoringWindowService
 from app.services import criteria_info
 from app.services.public_view import PublicProposalService
@@ -38,11 +40,11 @@ from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
 from members.services.notification_service import NotificationService
 from users.models import CustomUser, InterventionProposal, UserRole
-from users.permissions import IsAdmin, IsPanel, IsSecretariatOrAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly
+from users.permissions import IsAdmin, IsPanel, IsSecretariatOrAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, is_admin
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
@@ -64,6 +66,8 @@ from .serializers import (
     InterventionScoringWindowSerializer,
     InterventionStatusUpdateSerializer,
     InterventionStatusUpdateWriteSerializer,
+    NationalProgramProposalSerializer,
+    NationalProgramSerializer,
     SelectionToolSerializer,
     SubActivitySerializer,
     SystemCategorySerializer,
@@ -71,6 +75,11 @@ from .serializers import (
     InterventionScoreSerializer,
     UserSummarySerializer,
 )
+
+from django.db.models import ProtectedError
+
+
+logger = logging.getLogger(__name__)
 
 
  
@@ -91,6 +100,7 @@ def _get_or_404(model, **kwargs):
  
 
 
+
 def _notify_assigned_users(sub: SubActivity) -> None:
     """
     Called in a background thread after a sub-activity is created.
@@ -106,9 +116,156 @@ def _notify_assigned_users(sub: SubActivity) -> None:
             pass
 
 
+_PERMS = {
+    "list":           [AllowAny],
+    "retrieve":       [AllowAny],
+    "create":         [IsSecretariatOrAdmin],
+    "update":         [IsAdmin],
+    "partial_update": [IsAdmin],
+    "destroy":        [IsAdmin],
+}
 
 
+
+def _validation_message(exc: ValidationError):
+    return getattr(exc, "message_dict", None) or exc.messages
  
+ 
+ 
+class NationalProgramViewSet(viewsets.ViewSet):
+    """CRUD for the programs themselves."""
+
+    def get_permissions(self):
+        return [p() for p in _PERMS.get(self.action, [IsAdmin])]
+
+    def list(self, request):
+        active = request.query_params.get("active") in ("1", "true", "True")
+        qs = NationalProgramService.queryset(active_only=active)
+        return _ok(NationalProgramSerializer(qs, many=True).data)
+
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(NationalProgram, pk=pk)
+        if err:
+            return err
+        return _ok(NationalProgramSerializer(obj).data)
+
+    def create(self, request):
+        ser = NationalProgramSerializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        try:
+            ser.save()
+        except Exception:
+            logger.exception("Failed to create NationalProgram")
+            return _err("Could not create the program due to a server error.", 500)
+        return _ok(ser.data, "Program created.", 201)
+
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(NationalProgram, pk=pk)
+        if err:
+            return err
+        ser = NationalProgramSerializer(obj, data=request.data, partial=True)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        try:
+            ser.save()
+        except Exception:
+            logger.exception("Failed to update NationalProgram %s", pk)
+            return _err("Could not update the program due to a server error.", 500)
+        return _ok(ser.data, "Program updated.")
+
+    partial_update = update
+
+    def destroy(self, request, pk=None):
+        obj, err = _get_or_404(NationalProgram, pk=pk)
+        if err:
+            return err
+        try:
+            obj.delete()
+        except ProtectedError:
+            count = obj.proposals.count()
+            return _err(
+                f"Cannot delete '{obj.code}': it still has {count} proposal(s). "
+                "Reassign or remove them first.",
+                409,
+            )
+        except Exception:
+            logger.exception("Failed to delete NationalProgram %s", pk)
+            return _err("Could not delete the program due to a server error.", 500)
+        return _ok(None, "Program deleted.")
+
+
+class NationalProgramProposalViewSet(viewsets.ViewSet):
+    """Proposals. Each program owns its rows; filter with ?program=<id|code>."""
+
+    def get_permissions(self):
+        return [p() for p in _PERMS.get(self.action, [IsAdmin])]
+
+    def list(self, request):
+        qs = ProgramProposalService.queryset(program=request.query_params.get("program"))
+        return _ok(NationalProgramProposalSerializer(qs, many=True).data)
+
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(NationalProgramProposal, pk=pk)
+        if err:
+            return err
+        return _ok(NationalProgramProposalSerializer(obj).data)
+
+    def create(self, request):
+        ser = NationalProgramProposalSerializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        v = ser.validated_data
+        try:
+            proposal = ProgramProposalService.create(
+                program=v["program"],
+                title=v["title"],
+                data=v.get("data") or {},
+                submitted_date=v.get("submitted_date"),
+                user=request.user,
+            )
+        except ValidationError as e:
+            return _err(_validation_message(e), 400)
+        except Exception:
+            logger.exception("Failed to create NationalProgramProposal")
+            return _err("Could not create the proposal due to a server error.", 500)
+        return _ok(NationalProgramProposalSerializer(proposal).data, "Proposal created.", 201)
+
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(NationalProgramProposal, pk=pk)
+        if err:
+            return err
+        ser = NationalProgramProposalSerializer(obj, data=request.data, partial=True)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        v = ser.validated_data
+        try:
+            proposal = ProgramProposalService.update(
+                obj,
+                title=v.get("title"),
+                data=v.get("data"),
+                submitted_date=v.get("submitted_date"),
+            )
+        except ValidationError as e:
+            return _err(_validation_message(e), 400)
+        except Exception:
+            logger.exception("Failed to update NationalProgramProposal %s", pk)
+            return _err("Could not update the proposal due to a server error.", 500)
+        return _ok(NationalProgramProposalSerializer(proposal).data, "Proposal updated.")
+
+    partial_update = update
+
+    def destroy(self, request, pk=None):
+        obj, err = _get_or_404(NationalProgramProposal, pk=pk)
+        if err:
+            return err
+        try:
+            ref = obj.reference_number
+            obj.delete()
+        except Exception:
+            logger.exception("Failed to delete NationalProgramProposal %s", pk)
+            return _err("Could not delete the proposal due to a server error.", 500)
+        return _ok(None, f"Proposal {ref} deleted.")
 
 class UsersListView(APIView):
     """

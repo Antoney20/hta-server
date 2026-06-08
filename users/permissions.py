@@ -5,6 +5,15 @@ from rest_framework.permissions import BasePermission
 class IsAdmin(permissions.BasePermission):
     def has_permission(self, request, view):
         return request.user and request.user.is_authenticated and request.user.has_role(UserRole.ADMIN)
+    
+
+def is_admin(user) -> bool:
+    """Allowed to delete: Django staff/superuser, or a user whose role is ADMIN."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_staff or user.is_superuser:
+        return True
+    return getattr(user, "role", None) == UserRole.ADMIN
 
 class IsSecretariate(permissions.BasePermission):
     def has_permission(self, request, view):

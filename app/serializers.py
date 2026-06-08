@@ -1,11 +1,32 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, AssessmentEvidenceDocument, AssessmentEvidenceImage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, AssessmentEvidenceDocument, AssessmentEvidenceImage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
 User = get_user_model()
+
+
+class NationalProgramSerializer(serializers.ModelSerializer):
+    reference_template = serializers.ReadOnlyField()
+ 
+    class Meta:
+        model = NationalProgram
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at"]
+ 
+ 
+class NationalProgramProposalSerializer(serializers.ModelSerializer):
+    # handy extras for the client, no extra queries (FK already selected)
+    program_code = serializers.CharField(source="program.code", read_only=True)
+    program_name = serializers.CharField(source="program.name", read_only=True)
+ 
+    class Meta:
+        model = NationalProgramProposal
+        fields = "__all__"
+        read_only_fields = ["reference_number", "created_by", "created_at", "updated_at"]
+ 
 
 class SelectionToolSerializer(serializers.ModelSerializer):
     class Meta:

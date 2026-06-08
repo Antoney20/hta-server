@@ -14,6 +14,8 @@ from .views import (
     FeedbackEmailLogViewSet,
     InterventionProposalViewSet,
     InterventionScoringWindowViewSet,
+    NationalProgramProposalViewSet,
+    NationalProgramViewSet,
     PublicProposalViewSet,
     ScoringReportView,
     SelectionToolViewSet,
@@ -28,6 +30,8 @@ from .views import (
 )
 
 router = DefaultRouter()
+router.register(r"national-programs", NationalProgramViewSet, basename="national-program")
+router.register(r"program-proposals", NationalProgramProposalViewSet, basename="program-proposal")
 router.register("selection-tools", SelectionToolViewSet, basename="selection-tool")
 router.register("system-categories", SystemCategoryViewSet, basename="system-category")
 router.register("intervention-categories", InterventionSystemCategoryViewSet, basename="intervention-category")
