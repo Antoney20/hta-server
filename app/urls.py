@@ -4,6 +4,8 @@ from .views import (
     ActivityViewSet,
     AdminScoreViewSet,
     AppraisalCriteriaEvidenceViewSet,
+    AssessmentCriteriaViewSet,
+    AssessmentEvidenceViewSet,
     CriteriaAppraisalScoreViewSet,
     CriteriaAppraisalToolViewSet,
     CriteriaInformationViewSet,
@@ -44,6 +46,8 @@ router.register(r"appraisal-evidence", AppraisalCriteriaEvidenceViewSet, basenam
 router.register(r"activities", ActivityViewSet, basename="activities")
 router.register(r"sub-activities", SubActivityViewSet, basename="sub-activities")
 router.register(r"scoring-windows", InterventionScoringWindowViewSet, basename="scoring-window")
+router.register(r"assessment-criteria", AssessmentCriteriaViewSet, basename="assessment-criteria")
+router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
  
 
 

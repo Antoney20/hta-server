@@ -103,3 +103,12 @@ class IsPanel(permissions.BasePermission):
             and request.user.has_role(UserRole.PANEL)
         )
  
+ 
+class IsAssessment(permissions.BasePermission):
+    def has_permission(self, request, view):
+        return (
+            request.user
+            and request.user.is_authenticated
+            and request.user.has_role(UserRole.ASSESSMENT)
+        )
+ 

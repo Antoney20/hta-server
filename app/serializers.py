@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, AssessmentEvidenceDocument, AssessmentEvidenceImage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -661,10 +661,44 @@ class InterventionScoringWindowSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_at", "updated_at", "created_by", "updated_by")
 
 
+class AssessmentCriteriaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssessmentCriteria
+        fields = ["id", "order", "name", "description", "is_active"]
 
 
+class AssessmentEvidenceDocumentSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssessmentEvidenceDocument
+        fields = ["id", "file", "filename", "description", "uploaded_at"]
+        read_only_fields = ["filename", "uploaded_at"]
 
 
+class AssessmentEvidenceImageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AssessmentEvidenceImage
+        fields = ["id", "image", "caption", "alt_text", "uploaded_at"]
+        read_only_fields = ["uploaded_at"]
+
+
+class AssessmentEvidenceSerializer(serializers.ModelSerializer):
+    documents      = AssessmentEvidenceDocumentSerializer(many=True, read_only=True)
+    images         = AssessmentEvidenceImageSerializer(many=True, read_only=True)
+    criteria_name  = serializers.CharField(source="criteria.name", read_only=True)
+    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True)
+
+    class Meta:
+        model = AssessmentEvidence
+        fields = [
+            "id", "criteria", "criteria_name", "interventions", "title", "notes",
+            "documents", "images", "created_by", "created_by_name",
+            "created_at", "updated_at",
+        ]
+        read_only_fields = ["created_by", "created_at", "updated_at"]
+        
+        
+        
+        
 
 
 

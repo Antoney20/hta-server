@@ -3,7 +3,7 @@ from rest_framework import serializers
 import re
 
 from app.core.input_validation import contains_attack, sanitize_text
-from users.utils.sanitize import sanitize_email
+from users.utils.sanitize import sanitize_email, sanitize_html
 from .models import   FAQ, ContactSubmission, CustomUser, Governance, MediaResource, Member , InterventionProposal, News, NewsletterSubscription, ProposalDocument, ProposalSubmission, TemporaryFile, UserRole
 from django.db.models import Q
 import logging
@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 from django.core.validators import EmailValidator, validate_email
 from django.core.exceptions import ValidationError as DjangoValidationError
 
+from django.utils.html import strip_tags
 
 class RegisterSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, min_length=8)
@@ -22,6 +23,7 @@ class RegisterSerializer(serializers.ModelSerializer):
     phone_number = serializers.CharField(max_length=20, required=False, allow_blank=True)
     notes = serializers.CharField(required=False, allow_blank=True)
 
+
     profile_image = serializers.ImageField(required=False, allow_null=True)
 
     class Meta:
@@ -29,6 +31,7 @@ class RegisterSerializer(serializers.ModelSerializer):
         fields = (
             'username', 'email', 'password', 'password_confirm',
             'first_name', 'last_name', 'country', 'profile_image',
+            'assessment_group',
             # Member fields
             'position', 'organization', 'phone_number', 'notes',
         )
@@ -432,12 +435,11 @@ SAFE_TEXT_FIELDS = [
     "county",
     "intervention_name",
     "intervention_type",
-    "beneficiary",
-    "justification",
-    "expected_impact",
-    "additional_info",
     "signature",
 ]
+
+RICH_TEXT_FIELDS = {"beneficiary", "justification", "expected_impact", "additional_info"}
+
 
 
 ALLOWED_FILE_TYPES = [".pdf", ".xlsx", ".docx"]
@@ -537,16 +539,18 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
         file.name = sanitize_text(file.name)
 
     def validate(self, attrs):
-
         for field in SAFE_TEXT_FIELDS:
             if field in attrs and attrs[field]:
                 cleaned = sanitize_text(attrs[field])
-
                 if contains_attack(cleaned):
-                    raise serializers.ValidationError(
-                        {field: "Suspicious input detected."}
-                    )
+                    raise serializers.ValidationError({field: "Suspicious input detected."})
+                attrs[field] = cleaned
 
+        for field in RICH_TEXT_FIELDS:
+            if field in attrs and attrs[field]:
+                cleaned = sanitize_html(attrs[field])
+                if contains_attack(strip_tags(cleaned)):  # check visible text, store HTML
+                    raise serializers.ValidationError({field: "Suspicious input detected."})
                 attrs[field] = cleaned
 
         return attrs

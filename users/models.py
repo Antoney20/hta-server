@@ -17,6 +17,10 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+
+
+
+
 class UserStatus(models.TextChoices):
     ACTIVE = "active", "Active"
     INACTIVE = "inactive", "Inactive"
@@ -29,6 +33,8 @@ class UserRole:
     USER = 'user'
     SWG = 'swg'
     PANEL           = 'panel' 
+    ASSESSMENT = 'assessment'
+    
     CHOICES = [
         (ADMIN, 'Admin'),
         (SECRETARIAT, 'Secretariat'),
@@ -36,34 +42,8 @@ class UserRole:
         (USER, 'User'),
         (SWG, 'SWG'),
         (PANEL,           'Panel'), 
+        (ASSESSMENT, 'Assessment'),
     ]
-
-
-# class CustomUserManager(BaseUserManager):
-#     def create_user(self, email, username, password=None, **extra_fields):
-#         if not email:
-#             raise ValueError("The Email field must be set")
-#         if not username:
-#             raise ValueError("The Username field must be set")
-
-#         email = self.normalize_email(email)
-#         user = self.model(email=email, username=username, **extra_fields)
-#         user.set_password(password)
-#         user.save(using=self._db)
-        
-        
-#         user_role_group, _ = Group.objects.get_or_create(name=UserRole.USER)
-#         user.groups.add(user_role_group)
-
-#         return user
-
-#     def create_superuser(self, email, username, password=None, **extra_fields):
-#         extra_fields.setdefault("is_staff", True)
-#         extra_fields.setdefault("is_superuser", True)
-#         extra_fields.setdefault("is_active", True)
-#         extra_fields.setdefault("status", UserStatus.ACTIVE)
-#         return self.create_user(email, username, password, **extra_fields)
-
 
 
 class CustomUserManager(BaseUserManager):
@@ -119,7 +99,8 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
         blank=True,
         help_text="Specific permissions for this user."
     )
-    
+    assessment_group = models.BooleanField(default=False)
+    assessment_group_name = models.CharField(max_length=200, blank=True, null=True)
     
     # sec
     login_attempts = models.PositiveIntegerField(default=0)
@@ -155,6 +136,10 @@ class CustomUser(AbstractBaseUser, PermissionsMixin):
 
     def is_panel(self):
         return self.role == UserRole.PANEL
+    
+
+    def is_assessment(self):
+        return self.role == UserRole.ASSESSMENT
 
     @property
     def is_blocked(self):
@@ -431,11 +416,6 @@ class TemporaryFile(models.Model):
     
     def __str__(self):
         return f"Temp file: {self.original_name}"
-    
-    
-    
-    
-
 
 class FAQ(models.Model):
     question = models.CharField(max_length=500, blank=True, null=True)
@@ -664,3 +644,7 @@ auditlog.register(Governance)
 auditlog.register(MediaResource)
 auditlog.register(ContactSubmission)
 auditlog.register(NewsletterSubscription)
+
+
+
+

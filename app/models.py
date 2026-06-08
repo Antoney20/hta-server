@@ -13,6 +13,96 @@ from users.models import InterventionProposal
 User = get_user_model()
 
 
+# program interventions. , sha, nrh, 
+class NationalProgram(models.Model):
+    name = models.CharField(max_length=200, unique=True)
+    code = models.CharField(max_length=40, unique=True)         # MOH-HIV, MOH-NCD, SHA, NRFH
+    description = models.TextField(blank=True)
+    field_schema = models.JSONField(default=list, blank=True)   # [{key,label,type,required,options}]
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["name"]
+        indexes = [models.Index(fields=["is_active", "name"])]
+ 
+    @property
+    def reference_template(self):
+        return f"INTERV-{self.code}"
+ 
+    def __str__(self):
+        return f"{self.code} — {self.name}"
+ 
+ 
+def _next_sequence(template, period):
+    """Highest existing suffix for this template+period, + 1 (uses the unique index)."""
+    prefix = f"{template}-{period}-"
+    last = (
+        NationalProgramProposal.objects
+        .filter(reference_number__startswith=prefix)
+        .order_by("-reference_number")               # zero-padded → lexical == numeric
+        .values_list("reference_number", flat=True)
+        .first()
+    )
+    try:
+        return int(last.rsplit("-", 1)[-1]) + 1 if last else 1
+    except (ValueError, AttributeError):
+        return 1
+ 
+ 
+class NationalProgramProposal(models.Model):
+    program = models.ForeignKey(NationalProgram, on_delete=models.PROTECT, related_name="program_proposals")
+    reference_number = models.CharField(max_length=64, unique=True, editable=False)
+    title = models.CharField(max_length=300)
+    data = models.JSONField(default=dict, blank=True)           # program-specific fields
+    submitted_date = models.DateField(default=timezone.localdate)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL,
+        null=True, blank=True, related_name="created_program_proposals",
+    )
+ 
+    class Meta:
+        ordering = ["-submitted_date", "-created_at"]
+        indexes = [
+            models.Index(fields=["program", "-submitted_date"]),
+            models.Index(fields=["-created_at"]),
+        ]
+ 
+    def clean(self):
+        # validate required dynamic fields against the program's schema
+        for f in self.program.field_schema or []:
+            key = f.get("key")
+            if key and f.get("required") and not self.data.get(key):
+                raise ValidationError({key: "This field is required."})
+ 
+    def save(self, *args, **kwargs):
+        if self.reference_number:
+            return super().save(*args, **kwargs)
+ 
+        template = self.program.reference_template
+        period = (self.submitted_date or timezone.localdate()).strftime("%Y-%m")
+        seq = _next_sequence(template, period)
+ 
+        # No locking: optimistic insert. On a unique clash, just try the next number.
+        for _ in range(100):
+            self.reference_number = f"{template}-{period}-{seq:04d}"
+            try:
+                with transaction.atomic():           #  clean retry on clash
+                    return super().save(*args, **kwargs)
+            except IntegrityError:
+                seq += 1
+        raise IntegrityError("Could not allocate a reference number")
+ 
+    def __str__(self):
+        return f"{self.reference_number} — {self.title}"
+
+
+
+#  main app
+
 class SelectionTool(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     criteria = models.CharField(max_length=255)
@@ -660,6 +750,113 @@ class InterventionScoringWindow(models.Model):
         return bool(window and window.is_open)
 
 
+
+
+
+
+# ── Assessment Group Evidence ───────────────────────────────────────────────
+
+class AssessmentCriteria(models.Model):
+    """The HTA assessment criteria, stored as rows so they're editable/orderable."""
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    order       = models.PositiveIntegerField(default=0, db_index=True)
+    name        = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True, help_text="Typical evidence sources for this criterion.")
+    is_active   = models.BooleanField(default=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["order", "name"]
+        verbose_name = "Assessment Criteria"
+        verbose_name_plural = "Assessment Criteria"
+
+    def __str__(self):
+        return self.name
+
+
+class AssessmentEvidence(models.Model):
+    """
+    Evidence captured by the assessment group, classified under one criterion.
+    A single piece of evidence can apply to one OR more interventions.
+    The body can be notes, documents, images — or any combination.
+    """
+    id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    criteria      = models.ForeignKey(
+        AssessmentCriteria, on_delete=models.PROTECT, related_name="evidence"
+    )
+    interventions = models.ManyToManyField(
+        InterventionProposal, related_name="assessment_evidence", blank=True
+    )
+    title         = models.CharField(max_length=255, blank=True)
+    notes         = models.TextField(blank=True)
+    created_by    = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="assessment_evidence_created",
+    )
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["criteria"])]
+
+    def __str__(self):
+        return f"{self.criteria} — {self.title or self.id}"
+
+
+def assessment_evidence_document_path(instance, filename):
+    return f"assessment/evidence/{instance.evidence.id}/documents/{filename}"
+
+
+def assessment_evidence_image_path(instance, filename):
+    return f"assessment/evidence/{instance.evidence.id}/images/{filename}"
+
+
+class AssessmentEvidenceDocument(models.Model):
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    evidence    = models.ForeignKey(
+        AssessmentEvidence, on_delete=models.CASCADE, related_name="documents"
+    )
+    file        = models.FileField(upload_to=assessment_evidence_document_path)
+    filename    = models.CharField(max_length=255, blank=True)
+    description = models.CharField(max_length=500, blank=True)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="assessment_documents_uploaded",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["uploaded_at"]
+
+    def save(self, *args, **kwargs):
+        if self.file and not self.filename:
+            self.filename = self.file.name.split("/")[-1]
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.filename} — {self.evidence}"
+
+
+class AssessmentEvidenceImage(models.Model):
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    evidence    = models.ForeignKey(
+        AssessmentEvidence, on_delete=models.CASCADE, related_name="images"
+    )
+    image       = models.ImageField(upload_to=assessment_evidence_image_path)
+    caption     = models.CharField(max_length=500, blank=True)
+    alt_text    = models.CharField(max_length=255, blank=True)
+    uploaded_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="assessment_images_uploaded",
+    )
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["uploaded_at"]
+
+    def __str__(self):
+        return f"Image — {self.evidence} ({self.caption or 'no caption'})"
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)

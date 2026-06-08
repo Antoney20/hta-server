@@ -42,11 +42,13 @@ from users.permissions import IsAdmin, IsPanel, IsSecretariatOrAdmin, IsSecretar
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
     AppraisalCriteriaEvidenceWriteSerializer,
+    AssessmentCriteriaSerializer,
+    AssessmentEvidenceSerializer,
     CriteriaAppraisalScoreCreateSerializer,
     CriteriaAppraisalScoreSerializer,
     CriteriaAppraisalToolSerializer,
@@ -1516,4 +1518,34 @@ class InterventionScoringWindowViewSet(viewsets.ModelViewSet):
         except PermissionDenied as e:
             return _err(str(e), 403)
         return _ok(None, f"Scoring window '{label}' deleted.")
+ 
+class AssessmentCriteriaViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = AssessmentCriteria.objects.filter(is_active=True)
+    serializer_class = AssessmentCriteriaSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+
+class AssessmentEvidenceViewSet(viewsets.ModelViewSet):
+    serializer_class = AssessmentEvidenceSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        qs = (AssessmentEvidence.objects
+              .select_related("criteria", "created_by")
+              .prefetch_related("documents", "images", "interventions"))
+        criteria = self.request.query_params.get("criteria")
+        intervention = self.request.query_params.get("intervention")
+        if criteria:
+            qs = qs.filter(criteria_id=criteria)
+        if intervention:
+            qs = qs.filter(interventions__id=intervention)
+        return qs.distinct()
+
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+ 
+ 
+ 
+ 
+ 
  
