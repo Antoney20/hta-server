@@ -575,6 +575,7 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
 
         uploaded_documents = validated_data.pop('uploaded_documents', [])
         uploaded_document = validated_data.pop('uploadedDocument', None)
+        
 
         if uploaded_document:
             uploaded_documents.append(uploaded_document)

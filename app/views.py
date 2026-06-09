@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 from django.db import transaction
@@ -34,22 +35,22 @@ from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.core.services.scoring_window import ScoringWindowService
 from app.services import criteria_info
+from app.services.evidence import AssessmentEvidenceService
 from app.services.public_view import PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
 from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
 from members.services.notification_service import NotificationService
 from users.models import CustomUser, InterventionProposal, UserRole
-from users.permissions import IsAdmin, IsPanel, IsSecretariatOrAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, is_admin
+from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, is_admin
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
     AppraisalCriteriaEvidenceWriteSerializer,
-    AssessmentCriteriaSerializer,
     AssessmentEvidenceSerializer,
     CriteriaAppraisalScoreCreateSerializer,
     CriteriaAppraisalScoreSerializer,
@@ -1675,34 +1676,96 @@ class InterventionScoringWindowViewSet(viewsets.ModelViewSet):
         except PermissionDenied as e:
             return _err(str(e), 403)
         return _ok(None, f"Scoring window '{label}' deleted.")
- 
-class AssessmentCriteriaViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = AssessmentCriteria.objects.filter(is_active=True)
-    serializer_class = AssessmentCriteriaSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
 
-class AssessmentEvidenceViewSet(viewsets.ModelViewSet):
-    serializer_class = AssessmentEvidenceSerializer
-    permission_classes = [permissions.IsAuthenticated]
 
-    def get_queryset(self):
-        qs = (AssessmentEvidence.objects
-              .select_related("criteria", "created_by")
-              .prefetch_related("documents", "images", "interventions"))
-        criteria = self.request.query_params.get("criteria")
-        intervention = self.request.query_params.get("intervention")
-        if criteria:
-            qs = qs.filter(criteria_id=criteria)
-        if intervention:
-            qs = qs.filter(interventions__id=intervention)
-        return qs.distinct()
 
-    def perform_create(self, serializer):
-        serializer.save(created_by=self.request.user)
- 
- 
- 
- 
- 
- 
+
+
+def _ids(request, key):
+    """Accept repeated multipart fields or a JSON array string/list."""
+    data = request.data
+    vals = data.getlist(key) if hasattr(data, "getlist") else data.get(key)
+    if isinstance(vals, str):
+        try:
+            vals = json.loads(vals)
+        except ValueError:
+            vals = [vals] if vals else []
+    return vals or []
+
+
+def _documents(request):
+    """Pair uploaded files with their parallel descriptions[]."""
+    files = request.FILES.getlist("files")
+    descs = request.data.getlist("descriptions") if hasattr(request.data, "getlist") else []
+    return [{"file": f, "description": descs[i] if i < len(descs) else ""} for i, f in enumerate(files)]
+
+
+class AssessmentEvidenceViewSet(viewsets.ViewSet):
+    parser_classes = [MultiPartParser, FormParser, JSONParser]
+
+    def get_permissions(self):
+        if self.action in ("create", "update", "partial_update"):
+            return [(IsAssessment | IsSecretariatOrAdmin)()]   # assessment, secretariat, admin
+        if self.action == "destroy":
+            return [IsAdmin()]                                 # admin only
+        return [IsAuthenticated()]                             # list / retrieve — any signed-in (incl. swg, panel)
+
+    def list(self, request):
+        qs = AssessmentEvidenceService.queryset()
+        return _ok(AssessmentEvidenceSerializer(qs, many=True).data)
+
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(AssessmentEvidence, pk=pk)
+        if err:
+            return err
+        return _ok(AssessmentEvidenceSerializer(obj).data)
+
+    def create(self, request):
+        try:
+            evidence = AssessmentEvidenceService.create(
+                summary=request.data.get("summary", ""),
+                intervention_ids=_ids(request, "intervention_ids"),
+                program_proposal_ids=_ids(request, "program_proposal_ids"),
+                documents=_documents(request),
+                user=request.user,
+            )
+        except Exception:
+            logger.exception("Failed to create assessment evidence")
+            return _err("Could not save the evidence due to a server error.", 500)
+        return _ok(AssessmentEvidenceSerializer(evidence).data, "Evidence saved.", 201)
+
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(AssessmentEvidence, pk=pk)
+        if err:
+            return err
+        try:
+            evidence = AssessmentEvidenceService.update(
+                obj,
+                summary=request.data.get("summary"),
+                intervention_ids=_ids(request, "intervention_ids") if "intervention_ids" in request.data else None,
+                program_proposal_ids=_ids(request, "program_proposal_ids") if "program_proposal_ids" in request.data else None,
+                documents=_documents(request),
+                user=request.user,
+            )
+        except Exception:
+            logger.exception("Failed to update assessment evidence %s", pk)
+            return _err("Could not update the evidence due to a server error.", 500)
+        return _ok(AssessmentEvidenceSerializer(evidence).data, "Evidence updated.")
+
+    partial_update = update
+
+    def destroy(self, request, pk=None):
+        obj, err = _get_or_404(AssessmentEvidence, pk=pk)
+        if err:
+            return err
+        try:
+            obj.delete()
+        except Exception:
+            logger.exception("Failed to delete assessment evidence %s", pk)
+            return _err("Could not delete the evidence due to a server error.", 500)
+        return _ok(None, "Evidence deleted.")
+    
+    
+    
+    

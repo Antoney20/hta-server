@@ -752,111 +752,69 @@ class InterventionScoringWindow(models.Model):
 
 
 
-
-
-# ── Assessment Group Evidence ───────────────────────────────────────────────
-
-class AssessmentCriteria(models.Model):
-    """The HTA assessment criteria, stored as rows so they're editable/orderable."""
-    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    order       = models.PositiveIntegerField(default=0, db_index=True)
-    name        = models.CharField(max_length=255, unique=True)
-    description = models.TextField(blank=True, help_text="Typical evidence sources for this criterion.")
-    is_active   = models.BooleanField(default=True)
-    created_at  = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        ordering = ["order", "name"]
-        verbose_name = "Assessment Criteria"
-        verbose_name_plural = "Assessment Criteria"
-
-    def __str__(self):
-        return self.name
-
-
+ 
+def assessment_evidence_document_path(instance, filename):
+    # assessment/evidence/<refno>/documents/<filename> ; the evidence id is the refno
+    return f"assessment/evidence/{instance.evidence_id}/documents/{filename}"
+ 
+ 
 class AssessmentEvidence(models.Model):
     """
-    Evidence captured by the assessment group, classified under one criterion.
-    A single piece of evidence can apply to one OR more interventions.
-    The body can be notes, documents, images — or any combination.
+    Evidence captured by the assessment group,
+ 
+    A single piece of evidence can apply to one OR more targets, and the target
+    can be an InterventionProposal, a NationalProgramProposal, or both. The
+    summary is optional; supporting files live in AssessmentEvidenceDocument.
     """
-    id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    criteria      = models.ForeignKey(
-        AssessmentCriteria, on_delete=models.PROTECT, related_name="evidence"
-    )
-    interventions = models.ManyToManyField(
-        InterventionProposal, related_name="assessment_evidence", blank=True
-    )
-    title         = models.CharField(max_length=255, blank=True)
-    notes         = models.TextField(blank=True)
-    created_by    = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="assessment_evidence_created",
-    )
-    created_at    = models.DateTimeField(auto_now_add=True)
-    updated_at    = models.DateTimeField(auto_now=True)
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
+ 
+    # either / both — keep them separate so each stays queryable & indexed
+    interventions = models.ManyToManyField(
+        InterventionProposal, blank=True, related_name="assessment_group",
+    )
+    program_proposals = models.ManyToManyField(
+        NationalProgramProposal,  blank=True, related_name="assessment_group",
+    )
+ 
+    summary = models.TextField(blank=True)   # optional
+ 
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="evidence_created_by",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
     class Meta:
         ordering = ["-created_at"]
-        indexes = [models.Index(fields=["criteria"])]
-
+        indexes = [models.Index(fields=[ "-created_at"])]
+ 
     def __str__(self):
-        return f"{self.criteria} — {self.title or self.id}"
-
-
-def assessment_evidence_document_path(instance, filename):
-    return f"assessment/evidence/{instance.evidence.id}/documents/{filename}"
-
-
-def assessment_evidence_image_path(instance, filename):
-    return f"assessment/evidence/{instance.evidence.id}/images/{filename}"
-
-
+        return f"Evidence {self.id} "
+ 
+ 
 class AssessmentEvidenceDocument(models.Model):
-    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    evidence    = models.ForeignKey(
-        AssessmentEvidence, on_delete=models.CASCADE, related_name="documents"
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    evidence = models.ForeignKey(
+        AssessmentEvidence, on_delete=models.CASCADE, related_name="documents",
     )
-    file        = models.FileField(upload_to=assessment_evidence_document_path)
-    filename    = models.CharField(max_length=255, blank=True)
-    description = models.CharField(max_length=500, blank=True)
+    file = models.FileField(upload_to=assessment_evidence_document_path)
+    description = models.CharField(max_length=500, blank=True)   # per-document summary
     uploaded_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="assessment_documents_uploaded",
     )
     uploaded_at = models.DateTimeField(auto_now_add=True)
-
+ 
     class Meta:
         ordering = ["uploaded_at"]
-
-    def save(self, *args, **kwargs):
-        if self.file and not self.filename:
-            self.filename = self.file.name.split("/")[-1]
-        super().save(*args, **kwargs)
-
+ 
     def __str__(self):
-        return f"{self.filename} — {self.evidence}"
+        return f"{self.file.name.split('/')[-1]} — {self.evidence_id}"
 
 
-class AssessmentEvidenceImage(models.Model):
-    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    evidence    = models.ForeignKey(
-        AssessmentEvidence, on_delete=models.CASCADE, related_name="images"
-    )
-    image       = models.ImageField(upload_to=assessment_evidence_image_path)
-    caption     = models.CharField(max_length=500, blank=True)
-    alt_text    = models.CharField(max_length=255, blank=True)
-    uploaded_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="assessment_images_uploaded",
-    )
-    uploaded_at = models.DateTimeField(auto_now_add=True)
 
-    class Meta:
-        ordering = ["uploaded_at"]
-
-    def __str__(self):
-        return f"Image — {self.evidence} ({self.caption or 'no caption'})"
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)

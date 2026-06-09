@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentCriteria, AssessmentEvidence, AssessmentEvidenceDocument, AssessmentEvidenceImage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -682,44 +682,45 @@ class InterventionScoringWindowSerializer(serializers.ModelSerializer):
         read_only_fields = ("created_at", "updated_at", "created_by", "updated_by")
 
 
-class AssessmentCriteriaSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AssessmentCriteria
-        fields = ["id", "order", "name", "description", "is_active"]
 
+        
+        
 
-class AssessmentEvidenceDocumentSerializer(serializers.ModelSerializer):
+class EvidenceDocumentSerializer(serializers.ModelSerializer):
+    name = serializers.SerializerMethodField()
+ 
     class Meta:
         model = AssessmentEvidenceDocument
-        fields = ["id", "file", "filename", "description", "uploaded_at"]
-        read_only_fields = ["filename", "uploaded_at"]
-
-
-class AssessmentEvidenceImageSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = AssessmentEvidenceImage
-        fields = ["id", "image", "caption", "alt_text", "uploaded_at"]
-        read_only_fields = ["uploaded_at"]
-
-
+        fields = ["id", "file", "name", "description", "uploaded_at"]
+        read_only_fields = ["id", "uploaded_at"]
+ 
+    def get_name(self, o):
+        return o.file.name.split("/")[-1] if o.file else ""
+ 
+ 
 class AssessmentEvidenceSerializer(serializers.ModelSerializer):
-    documents      = AssessmentEvidenceDocumentSerializer(many=True, read_only=True)
-    images         = AssessmentEvidenceImageSerializer(many=True, read_only=True)
-    criteria_name  = serializers.CharField(source="criteria.name", read_only=True)
-    created_by_name = serializers.CharField(source="created_by.get_full_name", read_only=True)
-
+    documents = EvidenceDocumentSerializer(many=True, read_only=True)
+    interventions = serializers.SerializerMethodField()
+    program_proposals = serializers.SerializerMethodField()
+ 
     class Meta:
         model = AssessmentEvidence
-        fields = [
-            "id", "criteria", "criteria_name", "interventions", "title", "notes",
-            "documents", "images", "created_by", "created_by_name",
-            "created_at", "updated_at",
+        fields = "__all__"
+        read_only_fields = ["id", "created_by", "created_at", "updated_at"]
+ 
+    def get_interventions(self, o):
+        return [
+            {"id": i.id, "reference_number": i.reference_number,
+             "intervention_name": i.intervention_name, "intervention_type": i.intervention_type}
+            for i in o.interventions.all()
         ]
-        read_only_fields = ["created_by", "created_at", "updated_at"]
-        
-        
-        
-        
+ 
+    def get_program_proposals(self, o):
+        return [
+            {"id": p.id, "reference_number": p.reference_number,
+             "title": p.title, "program": p.program_id}
+            for p in o.program_proposals.all()
+        ]
 
 
 

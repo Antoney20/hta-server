@@ -20,6 +20,7 @@ from members.services.email import send_task_assignment_emails
 from members.services.notification_service import NotificationService
 from members.services.task_service import TaskService
 from users.models import CustomUser, UserRole
+from users.permissions import is_admin
 
 from .models import (
     Announcement,
@@ -649,6 +650,15 @@ class TaskViewSet(viewsets.ModelViewSet):
     @action(detail=False, methods=["get"])
     def stats(self, request):
         return Response(TaskService.stats(request.user))
+
+
+    def destroy(self, request, *args, **kwargs):
+            if not is_admin(request.user):
+                return Response(
+                    {"detail": "You don't have permission to delete tasks."},
+                    status=status.HTTP_403_FORBIDDEN,
+                )
+            return super().destroy(request, *args, **kwargs)
 
 class ForumViewSet(viewsets.ModelViewSet):
     queryset = Channel.objects.all()
