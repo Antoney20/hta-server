@@ -222,6 +222,7 @@ class NationalProgramProposalViewSet(viewsets.ViewSet):
                 program=v["program"],
                 title=v["title"],
                 data=v.get("data") or {},
+                justification=v.get("justification"),
                 submitted_date=v.get("submitted_date"),
                 user=request.user,
             )
@@ -245,6 +246,7 @@ class NationalProgramProposalViewSet(viewsets.ViewSet):
                 obj,
                 title=v.get("title"),
                 data=v.get("data"),
+                justification=v.get("justification"),
                 submitted_date=v.get("submitted_date"),
             )
         except ValidationError as e:

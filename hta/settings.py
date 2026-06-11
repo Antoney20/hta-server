@@ -193,7 +193,7 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
     ],
     "DEFAULT_THROTTLE_RATES": {
-        "anon": "10/min",
+        "anon": "13/min",
     },    
 
     'DEFAULT_AUTHENTICATION_CLASSES': [
@@ -280,10 +280,11 @@ AUTH_USER_MODEL = 'users.CustomUser'
 STATIC_URL = '/static/'
 
 STATIC_ROOT = os.path.join(BASE_DIR, 'static')
-MEDIA_URL = 'https://bptap.health.go.ke/media/'
+# MEDIA_URL = 'https://bptap.health.go.ke/media/'
 # MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+MEDIA_URL = 'http://127.0.0.1:8000/media/'
 # MEDIA_ROOT = BASE_DIR / 'media'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+# MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 # Default primary key field type
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-fld
 

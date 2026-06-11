@@ -41,7 +41,7 @@ class ProgramProposalService:
         return qs
 
     @staticmethod
-    def create(*, program, title, data=None, submitted_date=None, user=None):
+    def create(*, program, title, data=None, justification=None, submitted_date=None, user=None):
         validate_program_data(program, data)
         proposal = NationalProgramProposal(
             program=program,
@@ -55,13 +55,15 @@ class ProgramProposalService:
         return proposal
 
     @staticmethod
-    def update(proposal, *, title=None, data=None, submitted_date=None):
+    def update(proposal, *, title=None, justification=None, data=None, submitted_date=None):
         fields = []
         if data is not None:
             validate_program_data(proposal.program, data)
             proposal.data, _ = data, fields.append("data")
         if title is not None:
             proposal.title, _ = title, fields.append("title")
+        if justification is not None:
+            proposal.justification, _ = justification, fields.append("justification")
         if submitted_date is not None:
             proposal.submitted_date, _ = submitted_date, fields.append("submitted_date")
         if fields:

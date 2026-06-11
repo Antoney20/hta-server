@@ -343,7 +343,7 @@ class ProposalDocumentSerializer(serializers.ModelSerializer):
         # Only secretariat and admin can see document URLs
         allowed_roles = ['secretariat', 'admin']
         if request.user.role not in allowed_roles:
-            return 'Access denied.'
+            return 'access-denied'
 
         if obj.document and hasattr(obj.document, 'url'):
             return request.build_absolute_uri(obj.document.url)

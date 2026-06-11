@@ -55,6 +55,7 @@ class NationalProgramProposal(models.Model):
     program = models.ForeignKey(NationalProgram, on_delete=models.PROTECT, related_name="program_proposals")
     reference_number = models.CharField(max_length=64, unique=True, editable=False)
     title = models.CharField(max_length=300)
+    justification = models.TextField(blank=True, null=True)
     data = models.JSONField(default=dict, blank=True)           # program-specific fields
     submitted_date = models.DateField(default=timezone.localdate)
     created_at = models.DateTimeField(auto_now_add=True)
