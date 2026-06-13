@@ -30,6 +30,7 @@ from rest_framework import permissions, status
 from dataclasses import asdict
 from rest_framework.views import APIView
 from app.core.emails.feedback import send_feedback_email
+from app.core.services.evidence_extraction import EvidenceExtractionService
 from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
@@ -46,7 +47,7 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
@@ -60,6 +61,8 @@ from .serializers import (
     CriteriaInformationSerializer,
     DecisionTypeCreateSerializer,
     DecisionTypeSerializer,
+    EvidenceCriterionSerializer,
+    EvidenceExtractionSerializer,
     FeedbackCategorySerializer,
     FeedbackCategoryWriteSerializer,
     FeedbackEmailLogSerializer,
@@ -183,13 +186,6 @@ class NationalProgramViewSet(viewsets.ViewSet):
             return err
         try:
             obj.delete()
-        except ProtectedError:
-            count = obj.proposals.count()
-            return _err(
-                f"Cannot delete '{obj.code}': it still has {count} proposal(s). "
-                "Reassign or remove them first.",
-                409,
-            )
         except Exception:
             logger.exception("Failed to delete NationalProgram %s", pk)
             return _err("Could not delete the program due to a server error.", 500)
@@ -269,6 +265,135 @@ class NationalProgramProposalViewSet(viewsets.ViewSet):
             logger.exception("Failed to delete NationalProgramProposal %s", pk)
             return _err("Could not delete the proposal due to a server error.", 500)
         return _ok(None, f"Proposal {ref} deleted.")
+    
+    
+
+class EvidenceCriterionViewSet(viewsets.ViewSet):
+    """The editable code book. Reads open to any user; writes are admin-only."""
+ 
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [IsAuthenticated()]
+        return [IsAdmin()]
+ 
+    def list(self, request):
+        active = request.query_params.get("active") in ("1", "true", "True")
+        qs = EvidenceCriterion.objects.all()
+        if active:
+            qs = qs.filter(is_active=True)
+        return _ok(EvidenceCriterionSerializer(qs, many=True).data)
+ 
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(EvidenceCriterion, pk=pk)
+        if err:
+            return err
+        return _ok(EvidenceCriterionSerializer(obj).data)
+ 
+    def create(self, request):
+        ser = EvidenceCriterionSerializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        try:
+            ser.save()
+        except Exception:
+            logger.exception("Failed to create EvidenceCriterion")
+            return _err("Could not create the criterion due to a server error.", 500)
+        return _ok(ser.data, "Criterion created.", 201)
+ 
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(EvidenceCriterion, pk=pk)
+        if err:
+            return err
+        ser = EvidenceCriterionSerializer(obj, data=request.data, partial=True)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        try:
+            ser.save()
+        except Exception:
+            logger.exception("Failed to update EvidenceCriterion %s", pk)
+            return _err("Could not update the criterion due to a server error.", 500)
+        return _ok(ser.data, "Criterion updated.")
+ 
+    partial_update = update
+ 
+    def destroy(self, request, pk=None):
+        obj, err = _get_or_404(EvidenceCriterion, pk=pk)
+        if err:
+            return err
+        try:
+            obj.delete()
+        except Exception:
+            logger.exception("Failed to delete EvidenceCriterion %s", pk)
+            return _err("Could not delete the criterion due to a server error.", 500)
+        return _ok(None, "Criterion deleted.")
+ 
+ 
+class EvidenceExtractionViewSet(viewsets.ViewSet):
+    """Evidence rows. add: admin/secretariat/assessment · edit: owner or admin/secretariat ·
+    delete: admin only."""
+ 
+    def get_permissions(self):
+        return [IsAuthenticated()]
+ 
+    def list(self, request):
+        qs = EvidenceExtractionService.queryset()
+        return _ok(EvidenceExtractionSerializer(qs, many=True).data)
+ 
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(EvidenceExtraction, pk=pk)
+        if err:
+            return err
+        return _ok(EvidenceExtractionSerializer(obj).data)
+ 
+    def create(self, request):
+        if not EvidenceExtractionService.can_add(request.user):
+            return _err("You are not authorized to add evidence extractions.", 403)
+        ser = EvidenceExtractionSerializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        try:
+            obj = EvidenceExtractionService.create(user=request.user, **ser.validated_data)
+        except ValidationError as e:
+            return _err(_validation_message(e), 400)
+        except Exception:
+            logger.exception("Failed to create EvidenceExtraction")
+            return _err("Could not create the evidence extraction due to a server error.", 500)
+        return _ok(EvidenceExtractionSerializer(obj).data, "Evidence extraction created.", 201)
+ 
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(EvidenceExtraction, pk=pk)
+        if err:
+            return err
+        if not EvidenceExtractionService.can_edit(request.user, obj):
+            return _err("You are not authorized to edit this evidence extraction.", 403)
+        ser = EvidenceExtractionSerializer(obj, data=request.data, partial=True)
+        if not ser.is_valid():
+            return _err(ser.errors)
+        try:
+            obj = EvidenceExtractionService.update(obj, **ser.validated_data)
+        except ValidationError as e:
+            return _err(_validation_message(e), 400)
+        except Exception:
+            logger.exception("Failed to update EvidenceExtraction %s", pk)
+            return _err("Could not update the evidence extraction due to a server error.", 500)
+        return _ok(EvidenceExtractionSerializer(obj).data, "Evidence extraction updated.")
+ 
+    partial_update = update
+ 
+    def destroy(self, request, pk=None):
+        if not EvidenceExtractionService.can_delete(request.user):
+            return _err("You are not authorized to delete evidence extractions.", 403)
+        obj, err = _get_or_404(EvidenceExtraction, pk=pk)
+        if err:
+            return err
+        try:
+            obj.delete()
+        except Exception:
+            logger.exception("Failed to delete EvidenceExtraction %s", pk)
+            return _err("Could not delete the evidence extraction due to a server error.", 500)
+        return _ok(None, "Evidence extraction deleted.")
+ 
+
 
 class UsersListView(APIView):
     """

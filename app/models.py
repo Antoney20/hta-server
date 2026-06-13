@@ -52,6 +52,7 @@ def _next_sequence(template, period):
  
  
 class NationalProgramProposal(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     program = models.ForeignKey(NationalProgram, on_delete=models.PROTECT, related_name="program_proposals")
     reference_number = models.CharField(max_length=64, unique=True, editable=False)
     title = models.CharField(max_length=300)
@@ -101,6 +102,67 @@ class NationalProgramProposal(models.Model):
         return f"{self.reference_number} — {self.title}"
 
 
+
+
+
+class EvidenceCriterion(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, unique=True)
+    code = models.SlugField(max_length=60, unique=True)          # clinical_effectiveness, safety…
+    description = models.TextField(blank=True, null=True)
+    # [{key,label,type,definition,formula,example,required,options}]  ← code-book columns
+    field_schema = models.JSONField(default=list, blank=True)
+    position = models.PositiveSmallIntegerField(default=0)        # column-group order
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["position", "name"]
+        indexes = [models.Index(fields=["is_active", "position"])]
+ 
+    def __str__(self):
+        return self.name
+ 
+ 
+class EvidenceExtraction(models.Model):
+    """One intervention's extracted evidence — a single Outcomes-sheet row.
+    Attaches to exactly one proposal, of either type."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    national_proposal = models.OneToOneField(
+        NationalProgramProposal, on_delete=models.CASCADE,
+        related_name="evidence", null=True, blank=True,
+    )
+    intervention_proposal = models.OneToOneField(
+        InterventionProposal, on_delete=models.CASCADE,
+        related_name="evidence", null=True, blank=True,
+    )
+    # routing block — the only fixed/specific fields; real columns so they're queryable
+    routing_decision = models.TextField(blank=True, null=True)
+    routing_decision = models.TextField(blank=True, null=True)
+    icd_11 = models.CharField(max_length=120, blank=True, null=True, db_index=True)
+    disease_definition = models.TextField(blank=True, null=True)
+    # everything else: {criterion_code: {field_key: value}} — flexes with each schema
+    data = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True ,related_name="created_evidence_extractions", )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["-updated_at"]
+        indexes = [models.Index(fields=["-updated_at"])]
+       
+ 
+    @property
+    def proposal(self):
+        """Whichever proposal this evidence is attached to."""
+        return self.national_proposal or self.intervention_proposal
+ 
+ 
+    def __str__(self):
+        p = self.proposal
+        ref = getattr(p, "reference_number", None) or getattr(p, "pk", None)
+        return f"Evidence · {ref}"
 
 #  main app
 

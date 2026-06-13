@@ -9,6 +9,8 @@ from .views import (
     CriteriaAppraisalToolViewSet,
     CriteriaInformationViewSet,
     DecisionTypeViewSet,
+    EvidenceCriterionViewSet,
+    EvidenceExtractionViewSet,
     FeedbackCategoryViewSet,
     FeedbackEmailLogViewSet,
     InterventionProposalViewSet,
@@ -50,6 +52,9 @@ router.register(r"activities", ActivityViewSet, basename="activities")
 router.register(r"sub-activities", SubActivityViewSet, basename="sub-activities")
 router.register(r"scoring-windows", InterventionScoringWindowViewSet, basename="scoring-window")
 router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
+router.register(r"evidence-criteria", EvidenceCriterionViewSet, basename="evidence-criteria")
+router.register(r"evidence-extractions", EvidenceExtractionViewSet, basename="evidence-extraction")
+ 
 # router.register(r"assessment-criteria", AssessmentCriteriaViewSet, basename="assessment-criteria")
 # router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
  

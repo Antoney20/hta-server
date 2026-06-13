@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -10,23 +10,51 @@ User = get_user_model()
 
 class NationalProgramSerializer(serializers.ModelSerializer):
     reference_template = serializers.ReadOnlyField()
- 
+
     class Meta:
         model = NationalProgram
         fields = "__all__"
         read_only_fields = ["created_at", "updated_at"]
- 
- 
+
+
 class NationalProgramProposalSerializer(serializers.ModelSerializer):
     # handy extras for the client, no extra queries (FK already selected)
     program_code = serializers.CharField(source="program.code", read_only=True)
     program_name = serializers.CharField(source="program.name", read_only=True)
- 
+
     class Meta:
         model = NationalProgramProposal
         fields = "__all__"
         read_only_fields = ["reference_number", "created_by", "created_at", "updated_at"]
- 
+
+
+class EvidenceCriterionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = EvidenceCriterion
+        fields = "__all__"
+        read_only_fields = ["created_at", "updated_at"]
+
+
+class EvidenceExtractionSerializer(serializers.ModelSerializer):
+    # read-only convenience fields derived from whichever proposal is linked
+    proposal_reference = serializers.SerializerMethodField()
+    proposal_kind = serializers.SerializerMethodField()
+
+    class Meta:
+        model = EvidenceExtraction
+        fields = "__all__"
+        read_only_fields = ["created_by", "created_at", "updated_at"]
+
+    def get_proposal_reference(self, obj):
+        p = obj.proposal  # national_proposal or intervention_proposal (model property)
+        return getattr(p, "reference_number", None) if p else None
+
+    def get_proposal_kind(self, obj):
+        if obj.national_proposal_id:
+            return "program"
+        if obj.intervention_proposal_id:
+            return "intervention"
+        return None
 
 class SelectionToolSerializer(serializers.ModelSerializer):
     class Meta:
