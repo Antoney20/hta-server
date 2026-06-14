@@ -15,6 +15,10 @@ from django.db.utils import OperationalError, InternalError
 import time
 import logging
 
+
+
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -257,6 +261,14 @@ class InterventionProposal(models.Model):
     justification = models.TextField(blank=True, null=True)
     expected_impact = models.TextField(blank=True, null=True)
     additional_info = models.TextField(blank=True, null=True)
+    
+
+    package = models.ForeignKey(
+        "app.InterventionPackage",
+        on_delete=models.SET_NULL,
+        related_name="interventions",
+        null=True, blank=True,
+    )
 
     # Submission Details
     signature = models.CharField(max_length=200)

@@ -37,6 +37,7 @@ from app.core.services.national import NationalProgramService, ProgramProposalSe
 from app.core.services.scoring_window import ScoringWindowService
 from app.services import criteria_info
 from app.services.evidence import AssessmentEvidenceService
+from app.services.program import InterventionPackageService
 from app.services.public_view import PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
 from app.services.tp import TopicPriorityService
@@ -47,7 +48,7 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
@@ -66,6 +67,7 @@ from .serializers import (
     FeedbackCategorySerializer,
     FeedbackCategoryWriteSerializer,
     FeedbackEmailLogSerializer,
+    InterventionPackageSerializer,
     InterventionScoreCreateSerializer,
     InterventionScoringWindowSerializer,
     InterventionStatusUpdateSerializer,
@@ -1894,5 +1896,87 @@ class AssessmentEvidenceViewSet(viewsets.ViewSet):
         return _ok(None, "Evidence deleted.")
     
     
+
+
+class InterventionPackageViewSet(viewsets.ViewSet):
+
+    def get_permissions(self):
+        if self.action == "destroy":
+            return [IsAdmin()]
+        if self.action in ("create", "update", "partial_update", "bulk_upload"):
+            return [IsAuthenticated()]
+        return [IsAuthenticated()]
+
+    def list(self, request):
+        qs = InterventionPackageService.list_packages()
+        return _ok(InterventionPackageSerializer(qs, many=True).data)
+
+    def retrieve(self, request, pk=None):
+        pkg, err = _get_or_404(InterventionPackage, pk=pk)
+        if err:
+            return err
+        return _ok(InterventionPackageSerializer(pkg).data)
+
+    def create(self, request):
+        s = InterventionPackageSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        pkg = InterventionPackageService.create_package(s.validated_data)
+        return _ok(InterventionPackageSerializer(pkg).data, status_code=201)
+
+    def partial_update(self, request, pk=None):
+        pkg, err = _get_or_404(InterventionPackage, pk=pk)
+        if err:
+            return err
+        s = InterventionPackageSerializer(pkg, data=request.data, partial=True)
+        s.is_valid(raise_exception=True)
+        pkg = InterventionPackageService.update_package(pkg, s.validated_data)
+        return _ok(InterventionPackageSerializer(pkg).data)
+
+    def destroy(self, request, pk=None):
+        if getattr(request.user, "role", None) != "admin":
+            return _err("Not authorized to perform this action", status_code=403)
+        pkg, err = _get_or_404(InterventionPackage, pk=pk)
+        if err:
+            return err
+        InterventionPackageService.delete_package(pkg)
+        return _ok({"deleted": True})
     
-    
+    @action(detail=True, methods=["post"], url_path="link")
+    def link(self, request, pk=None):
+        pkg, err = _get_or_404(InterventionPackage, pk=pk)
+        if err:
+            return err
+        ref = (request.data.get("reference_number") or "").strip()
+        if not ref:
+            return _err("reference_number is required", status_code=400)
+        ok = InterventionPackageService.link_one(pkg, ref)  # returns True/False
+        return _ok({"linked": ok}) if ok else _err("No proposal found for reference", status_code=404)
+
+    @action(detail=True, methods=["post"], url_path="unlink")
+    def unlink(self, request, pk=None):
+        ref = (request.data.get("reference_number") or "").strip()
+        if not ref:
+            return _err("reference_number is required", status_code=400)
+        proposal = (
+            InterventionProposal.objects.filter(reference_number=ref, package_id=pk).first()
+            or NationalProgramProposal.objects.filter(reference_number=ref, package_id=pk).first()
+        )
+        if not proposal:
+            return _err("No linked proposal found for that reference", status_code=404)
+        proposal.package = None
+        proposal.save(update_fields=["package"])
+        return _ok({"unlinked": True})
+
+    @action(detail=False, methods=["post"], url_path="bulk-upload")
+    def bulk_upload(self, request):
+        rows = request.data.get("rows", [])
+        if not isinstance(rows, list):
+            return _err("rows must be a list", status_code=400)
+        return _ok(InterventionPackageService.bulk_upload(rows))
+
+
+    @action(detail=False, methods=["get"], url_path="grouped")
+    def grouped(self, request):
+        return _ok(InterventionPackageService.grouped())
+
+

@@ -1,12 +1,28 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
 User = get_user_model()
 
+class InterventionPackageSerializer(serializers.ModelSerializer):
+    interventions_count = serializers.SerializerMethodField()
+    national_proposals_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = InterventionPackage
+        fields = "__all__"
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_interventions_count(self, obj):
+        c = getattr(obj, "interventions_count", None)
+        return c if c is not None else obj.interventions.count()
+
+    def get_national_proposals_count(self, obj):
+        c = getattr(obj, "national_proposals_count", None)
+        return c if c is not None else obj.national_proposals.count()
 
 class NationalProgramSerializer(serializers.ModelSerializer):
     reference_template = serializers.ReadOnlyField()

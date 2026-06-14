@@ -10,7 +10,19 @@ from auditlog.registry import auditlog
 from app.core.consts import get_pending_decision
 from users.models import InterventionProposal
 
+
 User = get_user_model()
+
+
+class InterventionPackage(models.Model):
+    name = models.CharField(max_length=255, unique=True)
+    description = models.TextField(blank=True)
+    field_schema = models.JSONField(default=list, blank=True) 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return self.name
 
 
 # program interventions. , sha, nrh, 
@@ -20,8 +32,10 @@ class NationalProgram(models.Model):
     description = models.TextField(blank=True)
     field_schema = models.JSONField(default=list, blank=True)   # [{key,label,type,required,options}]
     is_active = models.BooleanField(default=True)
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    
  
     class Meta:
         ordering = ["name"]
@@ -57,7 +71,15 @@ class NationalProgramProposal(models.Model):
     reference_number = models.CharField(max_length=64, unique=True, editable=False)
     title = models.CharField(max_length=300)
     justification = models.TextField(blank=True, null=True)
-    data = models.JSONField(default=dict, blank=True)           # program-specific fields
+    data = models.JSONField(default=dict, blank=True)
+               
+    package = models.ForeignKey(
+        "app.InterventionPackage",
+        on_delete=models.SET_NULL,
+        related_name="national_proposals",
+        null=True, blank=True,
+    )
+
     submitted_date = models.DateField(default=timezone.localdate)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
