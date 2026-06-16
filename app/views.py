@@ -36,6 +36,7 @@ from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.core.services.scoring_window import ScoringWindowService
 from app.services import criteria_info
+from app.services.agentic import EvidenceService
 from app.services.evidence import AssessmentEvidenceService
 from app.services.program import InterventionPackageService
 from app.services.public_view import PublicProposalService
@@ -48,7 +49,7 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
@@ -64,6 +65,7 @@ from .serializers import (
     DecisionTypeSerializer,
     EvidenceCriterionSerializer,
     EvidenceExtractionSerializer,
+    EvidenceSerializer,
     FeedbackCategorySerializer,
     FeedbackCategoryWriteSerializer,
     FeedbackEmailLogSerializer,
@@ -1978,5 +1980,51 @@ class InterventionPackageViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["get"], url_path="grouped")
     def grouped(self, request):
         return _ok(InterventionPackageService.grouped())
+
+
+
+
+
+# agentic 
+
+class EvidenceViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = Evidence.objects.all()
+    serializer_class = EvidenceSerializer
+ 
+    def get_permissions(self):
+        return [IsAuthenticated()]
+ 
+    def get_queryset(self):
+        qs = super().get_queryset()
+        ref = self.request.query_params.get("intervention_ref")
+        return qs.filter(intervention_ref=ref) if ref else qs
+ 
+    @action(detail=False, methods=["post"], url_path="generate")
+    def generate(self, request):
+        from app.models import EvidenceExtraction  
+ 
+        extraction_id = request.data.get("extraction_id")
+        if not extraction_id:
+            return _err("extraction_id is required.", status.HTTP_400_BAD_REQUEST)
+ 
+        extraction, err = _get_or_404(EvidenceExtraction, id=extraction_id)
+        if err:
+            return err
+ 
+        try:
+            evidence = EvidenceService.generate(extraction, user=request.user)
+        except Exception as exc:  # noqa: BLE001 - surface model/transport failures cleanly
+            return _err(f"Generation failed: {exc}", status.HTTP_502_BAD_GATEWAY)
+ 
+        return _ok(EvidenceSerializer(evidence).data, "Evidence generated")
+ 
+    @action(detail=False, methods=["post"], url_path="generate-all")
+    def generate_all(self, request):
+        try:
+            summary = EvidenceService.generate_all(user=request.user)
+        except Exception as exc:  # noqa: BLE001 - surface batch failures cleanly
+            return _err(f"Batch generation failed: {exc}", status.HTTP_502_BAD_GATEWAY)
+        return _ok(summary, "Batch generation complete")
+
 
 

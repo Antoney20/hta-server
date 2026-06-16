@@ -30,6 +30,9 @@ os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
 # Secret Key
 SECRET_KEY = os.getenv("SECRET_KEY")
 
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+
 # Debug mode
 DEBUG = os.getenv("DEBUG", "False").lower() in ("true", "1", "yes")
 

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -768,5 +768,12 @@ class AssessmentEvidenceSerializer(serializers.ModelSerializer):
 
 
 
-
+ 
+class EvidenceSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Evidence
+        fields = "__all__"
+        # generated, never written by clients
+        read_only_fields = [f.name for f in Evidence._meta.fields]
+ 
 

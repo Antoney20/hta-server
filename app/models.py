@@ -899,6 +899,34 @@ class AssessmentEvidenceDocument(models.Model):
         return f"{self.file.name.split('/')[-1]} — {self.evidence_id}"
 
 
+ 
+class Evidence(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    # intervention reference number — stored as text for now
+    intervention_ref = models.CharField(max_length=120, db_index=True)
+    proposal_kind = models.CharField(max_length=20, blank=True, null=True)  
+
+    data = models.JSONField(default=dict, blank=True)       
+    dropped = models.JSONField(default=list, blank=True)    
+    flags = models.JSONField(default=list, blank=True)     
+    reasoning = models.JSONField(default=dict, blank=True)
+
+    protocol_version = models.CharField(max_length=20, blank=True, null=True)
+
+    generated_at = models.DateTimeField(auto_now_add=True)  
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="generated_evidence",
+    )
+
+    class Meta:
+        ordering = ["-generated_at"]
+        indexes = [models.Index(fields=["intervention_ref"])]
+
+    def __str__(self):
+        return f"Evidence · {self.intervention_ref}"
+
 
 
 auditlog.register(SelectionTool)

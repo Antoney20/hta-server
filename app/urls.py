@@ -11,6 +11,7 @@ from .views import (
     DecisionTypeViewSet,
     EvidenceCriterionViewSet,
     EvidenceExtractionViewSet,
+    EvidenceViewSet,
     FeedbackCategoryViewSet,
     FeedbackEmailLogViewSet,
     InterventionPackageViewSet,
@@ -56,6 +57,7 @@ router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="ass
 router.register(r"evidence-criteria", EvidenceCriterionViewSet, basename="evidence-criteria")
 router.register(r"evidence-extractions", EvidenceExtractionViewSet, basename="evidence-extraction")
 router.register(r"intervention-package", InterventionPackageViewSet, basename="assesment-package")
+router.register(r"agentic", EvidenceViewSet, basename="agentic")
 # router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
  
 
