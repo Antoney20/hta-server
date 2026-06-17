@@ -995,7 +995,22 @@ class ProtocolGuide(models.Model):
     def criteria(self):
         return list((self.rules or {}).keys())
  
+
  
+class BenefitPackage(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, db_index=True)
+    fund = models.CharField(max_length=160, blank=True, db_index=True)  
+    data = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["fund", "name"]
+        indexes = [models.Index(fields=["fund", "name"])]
+ 
+    def __str__(self):
+        return f"{self.name} · {self.fund}"
 
 
 auditlog.register(SelectionTool)

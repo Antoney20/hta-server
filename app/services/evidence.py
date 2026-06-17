@@ -6,6 +6,7 @@ from app.models import (
     InterventionProposal,
     NationalProgramProposal,
 )
+from django.db.models import Q
 
 
 class AssessmentEvidenceService:
@@ -63,6 +64,20 @@ class AssessmentEvidenceService:
             evidence.interventions.set(InterventionProposal.objects.filter(id__in=intervention_ids))
         if program_proposal_ids is not None:
             evidence.program_proposals.set(NationalProgramProposal.objects.filter(id__in=program_proposal_ids))
+                
+    @staticmethod
+    def related_by_reference(evidence):
+        """Every evidence sharing an intervention/program proposal
+        (i.e. a reference number) with `evidence`, including itself."""
+        iv_ids = list(evidence.interventions.values_list("id", flat=True))
+        pp_ids = list(evidence.program_proposals.values_list("id", flat=True))
+        if not iv_ids and not pp_ids:
+            return AssessmentEvidenceService.queryset().filter(pk=evidence.pk)
+        return (
+            AssessmentEvidenceService.queryset()
+            .filter(Q(interventions__in=iv_ids) | Q(program_proposals__in=pp_ids) | Q(pk=evidence.pk))
+            .distinct()
+        )
 
     @staticmethod
     def _add_documents(evidence, documents, user):

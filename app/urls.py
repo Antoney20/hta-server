@@ -5,6 +5,7 @@ from .views import (
     AdminScoreViewSet,
     AppraisalCriteriaEvidenceViewSet,
     AssessmentEvidenceViewSet,
+    BenefitPackageViewSet,
     CriteriaAppraisalScoreViewSet,
     CriteriaAppraisalToolViewSet,
     CriteriaInformationViewSet,
@@ -62,6 +63,8 @@ router.register(r"intervention-package", InterventionPackageViewSet, basename="a
 router.register(r"agentic", EvidenceViewSet, basename="agentic")
 router.register(r"scoring-models", ScoringModelViewSet, basename="scoring-model")
 router.register(r"protocol-guides", ProtocolGuideViewSet, basename="protocol-guide")
+router.register(r"benefit-packages", BenefitPackageViewSet, basename="benefit-package")
+ 
 # router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
  
 

@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -795,5 +795,9 @@ class ProtocolGuideSerializer(serializers.ModelSerializer):
 
 
 
-
+class BenefitPackageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = BenefitPackage
+        fields = "__all__"
+        read_only_fields = ("id", "created_at", "updated_at")
 

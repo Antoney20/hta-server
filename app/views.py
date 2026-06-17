@@ -38,8 +38,10 @@ from app.core.services.national import NationalProgramService, ProgramProposalSe
 from app.core.services.scoring_window import ScoringWindowService
 from app.services import criteria_info
 from app.services.agentic import EvidenceService
+from app.services.benefits_package import create_package, delete_package, list_packages, update_package
 from app.services.evidence import AssessmentEvidenceService
 from app.services.program import InterventionPackageService
+from app.services.protocol import activate_protocol_guide, create_protocol_guide, create_scoring_model, delete_protocol_guide, delete_scoring_model, finalize_scoring_model, get_active_protocol, list_protocol_guides, list_scoring_models, score_scoring_model, update_protocol_guide, update_scoring_model
 from app.services.public_view import PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
 from app.services.tp import TopicPriorityService
@@ -50,12 +52,13 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
     AppraisalCriteriaEvidenceWriteSerializer,
     AssessmentEvidenceSerializer,
+    BenefitPackageSerializer,
     CriteriaAppraisalScoreCreateSerializer,
     CriteriaAppraisalScoreSerializer,
     CriteriaAppraisalToolSerializer,
@@ -336,8 +339,6 @@ class EvidenceCriterionViewSet(viewsets.ViewSet):
  
  
 class EvidenceExtractionViewSet(viewsets.ViewSet):
-    """Evidence rows. add: admin/secretariat/assessment · edit: owner or admin/secretariat ·
-    delete: admin only."""
  
     def get_permissions(self):
         return [IsAuthenticated()]
@@ -1842,9 +1843,8 @@ class AssessmentEvidenceViewSet(viewsets.ViewSet):
         if self.action in ("create", "update", "partial_update"):
             return [(IsAssessment | IsSecretariatOrAdmin)()]   # assessment, secretariat, admin
         if self.action == "destroy":
-            return [IsAdmin()]                                 # admin only
-        return [IsAuthenticated()]                             # list / retrieve — any signed-in (incl. swg, panel)
-
+            return [IsAdmin()]                               
+        return [IsAuthenticated()]                           
     def list(self, request):
         qs = AssessmentEvidenceService.queryset()
         return _ok(AssessmentEvidenceSerializer(qs, many=True).data)
@@ -1889,6 +1889,16 @@ class AssessmentEvidenceViewSet(viewsets.ViewSet):
 
     partial_update = update
 
+
+    @action(detail=True, methods=["get"])
+    def group(self, request, pk=None):
+        obj, err = _get_or_404(AssessmentEvidence, pk=pk)
+        if err:
+            return err
+        qs = AssessmentEvidenceService.related_by_reference(obj)
+        return _ok(AssessmentEvidenceSerializer(qs, many=True).data)
+    
+    
     def destroy(self, request, pk=None):
         obj, err = _get_or_404(AssessmentEvidence, pk=pk)
         if err:
@@ -2038,7 +2048,7 @@ class ScoringModelViewSet(viewsets.ViewSet):
         return [IsAuthenticated()]
  
     def list(self, request):
-        qs = services.list_scoring_models()
+        qs = list_scoring_models()
         return _ok(ScoringModelSerializer(qs, many=True).data)
  
     def retrieve(self, request, pk=None):
@@ -2051,7 +2061,7 @@ class ScoringModelViewSet(viewsets.ViewSet):
         ser = ScoringModelSerializer(data=request.data)
         if not ser.is_valid():
             return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = services.create_scoring_model(**ser.validated_data)
+        obj = create_scoring_model(**ser.validated_data)
         return _ok(ScoringModelSerializer(obj).data, status.HTTP_201_CREATED)
  
     def update(self, request, pk=None):
@@ -2061,7 +2071,7 @@ class ScoringModelViewSet(viewsets.ViewSet):
         ser = ScoringModelSerializer(obj, data=request.data)
         if not ser.is_valid():
             return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = services.update_scoring_model(obj, **ser.validated_data)
+        obj = update_scoring_model(obj, **ser.validated_data)
         return _ok(ScoringModelSerializer(obj).data)
  
     def partial_update(self, request, pk=None):
@@ -2071,14 +2081,14 @@ class ScoringModelViewSet(viewsets.ViewSet):
         ser = ScoringModelSerializer(obj, data=request.data, partial=True)
         if not ser.is_valid():
             return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = services.update_scoring_model(obj, **ser.validated_data)
+        obj = update_scoring_model(obj, **ser.validated_data)
         return _ok(ScoringModelSerializer(obj).data)
  
     def destroy(self, request, pk=None):
         obj, err = _get_or_404(ScoringModel, pk=pk)
         if err:
             return err
-        services.delete_scoring_model(obj)
+        delete_scoring_model(obj)
         return _ok({"deleted": str(pk)})
  
     @action(detail=True, methods=["post"])
@@ -2092,7 +2102,7 @@ class ScoringModelViewSet(viewsets.ViewSet):
         )
         if guide is None:
             return _err("No protocol guide specified and none is active.")
-        services.score_scoring_model(obj, guide)
+        score_scoring_model(obj, guide)
         return _ok(ScoringModelSerializer(obj).data)
  
     @action(detail=True, methods=["post"])
@@ -2100,7 +2110,7 @@ class ScoringModelViewSet(viewsets.ViewSet):
         obj, err = _get_or_404(ScoringModel, pk=pk)
         if err:
             return err
-        services.finalize_scoring_model(obj)
+        finalize_scoring_model(obj)
         return _ok(ScoringModelSerializer(obj).data)
  
  
@@ -2111,7 +2121,7 @@ class ProtocolGuideViewSet(viewsets.ViewSet):
         return [IsAuthenticated()]
  
     def list(self, request):
-        qs = services.list_protocol_guides()
+        qs = list_protocol_guides()
         return _ok(ProtocolGuideSerializer(qs, many=True).data)
  
     def retrieve(self, request, pk=None):
@@ -2124,7 +2134,7 @@ class ProtocolGuideViewSet(viewsets.ViewSet):
         ser = ProtocolGuideSerializer(data=request.data)
         if not ser.is_valid():
             return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = services.create_protocol_guide(**ser.validated_data)
+        obj = create_protocol_guide(**ser.validated_data)
         return _ok(ProtocolGuideSerializer(obj).data, status.HTTP_201_CREATED)
  
     def update(self, request, pk=None):
@@ -2134,7 +2144,7 @@ class ProtocolGuideViewSet(viewsets.ViewSet):
         ser = ProtocolGuideSerializer(obj, data=request.data)
         if not ser.is_valid():
             return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = services.update_protocol_guide(obj, **ser.validated_data)
+        obj =  update_protocol_guide(obj, **ser.validated_data)
         return _ok(ProtocolGuideSerializer(obj).data)
  
     def partial_update(self, request, pk=None):
@@ -2144,14 +2154,14 @@ class ProtocolGuideViewSet(viewsets.ViewSet):
         ser = ProtocolGuideSerializer(obj, data=request.data, partial=True)
         if not ser.is_valid():
             return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = services.update_protocol_guide(obj, **ser.validated_data)
+        obj = update_protocol_guide(obj, **ser.validated_data)
         return _ok(ProtocolGuideSerializer(obj).data)
  
     def destroy(self, request, pk=None):
         obj, err = _get_or_404(ProtocolGuide, pk=pk)
         if err:
             return err
-        services.delete_protocol_guide(obj)
+        delete_protocol_guide(obj)
         return _ok({"deleted": str(pk)})
  
     @action(detail=True, methods=["post"])
@@ -2159,16 +2169,60 @@ class ProtocolGuideViewSet(viewsets.ViewSet):
         obj, err = _get_or_404(ProtocolGuide, pk=pk)
         if err:
             return err
-        services.activate_protocol_guide(obj)
+        activate_protocol_guide(obj)
         return _ok(ProtocolGuideSerializer(obj).data)
  
     @action(detail=False, methods=["get"])
     def active(self, request):
-        guide = services.get_active_protocol()
+        guide = get_active_protocol()
         if guide is None:
             return _err("No active protocol guide.", status.HTTP_404_NOT_FOUND)
         return _ok(ProtocolGuideSerializer(guide).data)
  
+
+
+class BenefitPackageViewSet(viewsets.ViewSet):
+    def get_permissions(self):
+        if self.action in ("list", "retrieve"):
+            return [AllowAny()]
+        return [IsAuthenticated(), IsAdmin()]
+ 
+    def list(self, request):
+        qs = list_packages(request.query_params.get("fund"))
+        return _ok(BenefitPackageSerializer(qs, many=True).data)
+ 
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(BenefitPackage, pk=pk)
+        if err:
+            return err
+        return _ok(BenefitPackageSerializer(obj).data)
+ 
+    def create(self, request):
+        ser = BenefitPackageSerializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = create_package(**ser.validated_data)
+        return _ok(BenefitPackageSerializer(obj).data, status.HTTP_201_CREATED)
+ 
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(BenefitPackage, pk=pk)
+        if err:
+            return err
+        ser = BenefitPackageSerializer(obj, data=request.data, partial=True)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = update_package(obj, **ser.validated_data)
+        return _ok(BenefitPackageSerializer(obj).data)
+ 
+    partial_update = update
+ 
+    def destroy(self, request, pk=None):
+        obj, err = _get_or_404(BenefitPackage, pk=pk)
+        if err:
+            return err
+        delete_package(obj)
+        return _ok({"deleted": str(pk)})
+
 
 
 

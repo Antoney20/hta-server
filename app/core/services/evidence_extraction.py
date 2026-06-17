@@ -6,7 +6,7 @@ from users.models import UserRole
 ADD_ROLES = {UserRole.ADMIN, UserRole.SECRETARIAT, UserRole.ASSESSMENT}   # SWG etc. excluded
 EDIT_ROLES = {UserRole.ADMIN, UserRole.SECRETARIAT}                       # + the owner
 
-# fields the client may set on create/update
+
 _WRITABLE = (
     "national_proposal", "intervention_proposal", "routing_decision", "icd_11",
     "disease_definition", "registrar", "assigned_person", "data",
