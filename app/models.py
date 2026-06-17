@@ -854,7 +854,6 @@ class AssessmentEvidence(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
  
-    # either / both — keep them separate so each stays queryable & indexed
     interventions = models.ManyToManyField(
         InterventionProposal, blank=True, related_name="assessment_group",
     )
@@ -884,7 +883,8 @@ class AssessmentEvidenceDocument(models.Model):
     evidence = models.ForeignKey(
         AssessmentEvidence, on_delete=models.CASCADE, related_name="documents",
     )
-    file = models.FileField(upload_to=assessment_evidence_document_path)
+    # file = models.FileField(upload_to=assessment_evidence_document_path)
+    file = models.FileField(upload_to="assessment/evidence/documents/")
     description = models.CharField(max_length=500, blank=True)   # per-document summary
     uploaded_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
