@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -776,4 +776,24 @@ class EvidenceSerializer(serializers.ModelSerializer):
         # generated, never written by clients
         read_only_fields = [f.name for f in Evidence._meta.fields]
  
+
+ 
+class ScoringModelSerializer(serializers.ModelSerializer):
+    row_count = serializers.IntegerField(read_only=True)
+ 
+    class Meta:
+        model = ScoringModel
+        fields = "__all__"
+        read_only_fields = ("id", "scores", "status", "uploaded_at", "updated_at")
+
+ 
+class ProtocolGuideSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProtocolGuide
+        fields = "__all__"
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+
+
 

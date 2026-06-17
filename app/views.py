@@ -29,6 +29,7 @@ from django.core.cache import cache
 from rest_framework import permissions, status
 from dataclasses import asdict
 from rest_framework.views import APIView
+from app import services
 from app.core.emails.feedback import send_feedback_email
 from app.core.services.evidence_extraction import EvidenceExtractionService
 from app.core.services.feedback import FeedbackService
@@ -49,7 +50,7 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
@@ -76,6 +77,8 @@ from .serializers import (
     InterventionStatusUpdateWriteSerializer,
     NationalProgramProposalSerializer,
     NationalProgramSerializer,
+    ProtocolGuideSerializer,
+    ScoringModelSerializer,
     SelectionToolSerializer,
     SubActivitySerializer,
     SystemCategorySerializer,
@@ -2025,6 +2028,149 @@ class EvidenceViewSet(viewsets.ReadOnlyModelViewSet):
         except Exception as exc:  # noqa: BLE001 - surface batch failures cleanly
             return _err(f"Batch generation failed: {exc}", status.HTTP_502_BAD_GATEWAY)
         return _ok(summary, "Batch generation complete")
+
+
+
+class ScoringModelViewSet(viewsets.ViewSet):
+    def get_permissions(self):
+        if self.action == "destroy":
+            return [IsAuthenticated(), IsAdmin()]
+        return [IsAuthenticated()]
+ 
+    def list(self, request):
+        qs = services.list_scoring_models()
+        return _ok(ScoringModelSerializer(qs, many=True).data)
+ 
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(ScoringModel, pk=pk)
+        if err:
+            return err
+        return _ok(ScoringModelSerializer(obj).data)
+ 
+    def create(self, request):
+        ser = ScoringModelSerializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = services.create_scoring_model(**ser.validated_data)
+        return _ok(ScoringModelSerializer(obj).data, status.HTTP_201_CREATED)
+ 
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(ScoringModel, pk=pk)
+        if err:
+            return err
+        ser = ScoringModelSerializer(obj, data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = services.update_scoring_model(obj, **ser.validated_data)
+        return _ok(ScoringModelSerializer(obj).data)
+ 
+    def partial_update(self, request, pk=None):
+        obj, err = _get_or_404(ScoringModel, pk=pk)
+        if err:
+            return err
+        ser = ScoringModelSerializer(obj, data=request.data, partial=True)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = services.update_scoring_model(obj, **ser.validated_data)
+        return _ok(ScoringModelSerializer(obj).data)
+ 
+    def destroy(self, request, pk=None):
+        obj, err = _get_or_404(ScoringModel, pk=pk)
+        if err:
+            return err
+        services.delete_scoring_model(obj)
+        return _ok({"deleted": str(pk)})
+ 
+    @action(detail=True, methods=["post"])
+    def score(self, request, pk=None):
+        obj, err = _get_or_404(ScoringModel, pk=pk)
+        if err:
+            return err
+        guide = services.resolve_protocol(
+            protocol_id=request.data.get("protocol_id"),
+            version=request.data.get("version"),
+        )
+        if guide is None:
+            return _err("No protocol guide specified and none is active.")
+        services.score_scoring_model(obj, guide)
+        return _ok(ScoringModelSerializer(obj).data)
+ 
+    @action(detail=True, methods=["post"])
+    def finalize(self, request, pk=None):
+        obj, err = _get_or_404(ScoringModel, pk=pk)
+        if err:
+            return err
+        services.finalize_scoring_model(obj)
+        return _ok(ScoringModelSerializer(obj).data)
+ 
+ 
+class ProtocolGuideViewSet(viewsets.ViewSet):
+    def get_permissions(self):
+        if self.action == "destroy":
+            return [IsAuthenticated(), IsAdmin()]
+        return [IsAuthenticated()]
+ 
+    def list(self, request):
+        qs = services.list_protocol_guides()
+        return _ok(ProtocolGuideSerializer(qs, many=True).data)
+ 
+    def retrieve(self, request, pk=None):
+        obj, err = _get_or_404(ProtocolGuide, pk=pk)
+        if err:
+            return err
+        return _ok(ProtocolGuideSerializer(obj).data)
+ 
+    def create(self, request):
+        ser = ProtocolGuideSerializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = services.create_protocol_guide(**ser.validated_data)
+        return _ok(ProtocolGuideSerializer(obj).data, status.HTTP_201_CREATED)
+ 
+    def update(self, request, pk=None):
+        obj, err = _get_or_404(ProtocolGuide, pk=pk)
+        if err:
+            return err
+        ser = ProtocolGuideSerializer(obj, data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = services.update_protocol_guide(obj, **ser.validated_data)
+        return _ok(ProtocolGuideSerializer(obj).data)
+ 
+    def partial_update(self, request, pk=None):
+        obj, err = _get_or_404(ProtocolGuide, pk=pk)
+        if err:
+            return err
+        ser = ProtocolGuideSerializer(obj, data=request.data, partial=True)
+        if not ser.is_valid():
+            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
+        obj = services.update_protocol_guide(obj, **ser.validated_data)
+        return _ok(ProtocolGuideSerializer(obj).data)
+ 
+    def destroy(self, request, pk=None):
+        obj, err = _get_or_404(ProtocolGuide, pk=pk)
+        if err:
+            return err
+        services.delete_protocol_guide(obj)
+        return _ok({"deleted": str(pk)})
+ 
+    @action(detail=True, methods=["post"])
+    def activate(self, request, pk=None):
+        obj, err = _get_or_404(ProtocolGuide, pk=pk)
+        if err:
+            return err
+        services.activate_protocol_guide(obj)
+        return _ok(ProtocolGuideSerializer(obj).data)
+ 
+    @action(detail=False, methods=["get"])
+    def active(self, request):
+        guide = services.get_active_protocol()
+        if guide is None:
+            return _err("No active protocol guide.", status.HTTP_404_NOT_FOUND)
+        return _ok(ProtocolGuideSerializer(guide).data)
+ 
+
+
 
 
 

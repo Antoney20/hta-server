@@ -902,18 +902,14 @@ class AssessmentEvidenceDocument(models.Model):
  
 class Evidence(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-
     # intervention reference number — stored as text for now
     intervention_ref = models.CharField(max_length=120, db_index=True)
     proposal_kind = models.CharField(max_length=20, blank=True, null=True)  
-
     data = models.JSONField(default=dict, blank=True)       
     dropped = models.JSONField(default=list, blank=True)    
     flags = models.JSONField(default=list, blank=True)     
     reasoning = models.JSONField(default=dict, blank=True)
-
     protocol_version = models.CharField(max_length=20, blank=True, null=True)
-
     generated_at = models.DateTimeField(auto_now_add=True)  
     created_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True,
@@ -927,6 +923,79 @@ class Evidence(models.Model):
     def __str__(self):
         return f"Evidence · {self.intervention_ref}"
 
+
+class ScoringModel(models.Model):
+ 
+    class Status(models.TextChoices):
+        DRAFT = "draft", "Draft"
+        SCORED = "scored", "Scored"
+        FINAL = "final", "Final"
+ 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    # 1. Title  (e.g. "test", "Phase 1 panel — final ranking")
+    title = models.CharField(max_length=200, db_index=True)
+    description = models.TextField(blank=True)
+    version = models.CharField(max_length=40, blank=True)
+    fields = models.JSONField(default=list, blank=True)
+    rows = models.JSONField(default=list, blank=True)
+    scores = models.JSONField(default=dict, blank=True)
+    
+    status = models.CharField(
+        max_length=10,
+        choices=Status.choices,
+        blank=True,
+        null=True,
+    )
+    
+    # Timestamp — the upload is a documented snapshot.
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["-uploaded_at"]
+        indexes = [models.Index(fields=["title"]), models.Index(fields=["status"])]
+        verbose_name = "scoring model"
+        verbose_name_plural = "scoring models"
+ 
+    def __str__(self):
+        return f"{self.title} ({self.row_count} interventions)"
+ 
+    @property
+    def row_count(self):
+        return len(self.rows or [])
+ 
+ 
+    def intervention_refs(self):
+        return [r.get("intervention_ref") for r in (self.rows or [])]
+ 
+ 
+
+class ProtocolGuide(models.Model):
+ 
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+ 
+    name = models.CharField(max_length=200)
+    version = models.CharField(max_length=40, db_index=True)
+    description = models.TextField(blank=True)
+ 
+    rules = models.JSONField(default=dict, blank=True)
+ 
+    is_active = models.BooleanField(default=False)
+ 
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    class Meta:
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["version"])]
+ 
+    def __str__(self):
+        return f"{self.name} v{self.version}{' (active)' if self.is_active else ''}"
+ 
+    def criteria(self):
+        return list((self.rules or {}).keys())
+ 
+ 
 
 
 auditlog.register(SelectionTool)
