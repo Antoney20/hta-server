@@ -12,7 +12,7 @@ from app.models import InterventionScore, SelectionTool
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-# ── Score scale constants ─────────────────────────────────────────────────────
+# ── Score scale constants 
 
 SCORE_MIN = 1   # worst possible score a reviewer can give
 SCORE_MAX = 3   # best possible score a reviewer can give
@@ -183,6 +183,8 @@ class InterventionAggregateScore:
     intervention_id: str
     intervention_name: str
     reviewer_count: int = 0
+    package: Optional[str] = None
+    phase: Optional[str] = None
     averaged_criteria: dict[str, float] = field(default_factory=dict)
     average_value_score: float = 0.0
 
@@ -310,7 +312,7 @@ def _build_normalisation(
     anchor_map = {a.criteria_name: a for a in anchors}
     rows = []
     for iv_id in scored_intervention_ids:
-        _ref, iv_name = intervention_meta[iv_id]
+        _ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
         iv_scores = reviewer_scores.get(iv_id, {})
         normalised = []
         for cname in criteria_names:
@@ -507,7 +509,7 @@ def _build_reviewer_scores(
         reviewer_iv_scores = score_index.get(rr.reviewer_id, {})
 
         for iv_id, iv_scores in reviewer_iv_scores.items():
-            _ref, iv_name = intervention_meta[iv_id]
+            _ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
 
             criteria_scores: list[CriteriaWeightedScore] = []
             for cname in criteria_names:
@@ -608,8 +610,28 @@ def _build_average_scores(
         totals_accum.setdefault(row.intervention_id, []).append(row.total_score)
 
     average_scores: list[InterventionAggregateScore] = []
+    # for iv_id, criteria_lists in criteria_accum.items():
+    #     _ref, iv_name = intervention_meta[iv_id]
+    #     reviewer_totals = totals_accum.get(iv_id, [])
+    #     reviewer_count = len(reviewer_totals)
+
+    #     averaged_criteria: dict[str, float] = {}
+    #     for cname in criteria_names:
+    #         vals = criteria_lists.get(cname, [])
+    #         averaged_criteria[cname] = round(sum(vals) / len(vals), 4) if vals else 0.0
+
+    #     average_value_score = round(sum(reviewer_totals) / reviewer_count, 4) if reviewer_count else 0.0
+
+    #     average_scores.append(InterventionAggregateScore(
+    #         intervention_id     = iv_id,
+    #         intervention_name   = iv_name,
+    #         reviewer_count      = reviewer_count,
+    #         averaged_criteria   = averaged_criteria,
+    #         average_value_score = average_value_score,
+    #     ))
+    
     for iv_id, criteria_lists in criteria_accum.items():
-        _ref, iv_name = intervention_meta[iv_id]
+        _ref, iv_name, pkg, phase = intervention_meta[iv_id]
         reviewer_totals = totals_accum.get(iv_id, [])
         reviewer_count = len(reviewer_totals)
 
@@ -623,6 +645,8 @@ def _build_average_scores(
         average_scores.append(InterventionAggregateScore(
             intervention_id     = iv_id,
             intervention_name   = iv_name,
+            package             = pkg,
+            phase               = phase,
             reviewer_count      = reviewer_count,
             averaged_criteria   = averaged_criteria,
             average_value_score = average_value_score,
@@ -651,7 +675,7 @@ class WeightingReportService:
     @staticmethod
     def generate(intervention_ids: list[str] | None = None) -> WeightingReport:
         try:
-            qs = InterventionProposal.objects.order_by("reference_number")
+            qs = InterventionProposal.objects.select_related("package", "phase").order_by("reference_number")
             if intervention_ids:
                 qs = qs.filter(id__in=intervention_ids)
             interventions = list(qs)
@@ -671,10 +695,19 @@ class WeightingReportService:
                     message="No scores found for the selected interventions.",
                 )
 
-            intervention_meta: dict[str, tuple[str, str]] = {
+            # intervention_meta: dict[str, tuple[str, str]] = {
+            #     str(iv.id): (
+            #         getattr(iv, "reference_number", str(iv.id)),
+            #         getattr(iv, "intervention_name", str(iv)),
+            #     )
+            #     for iv in interventions
+            # }
+            intervention_meta: dict[str, tuple[str, str, Optional[str], Optional[str]]] = {
                 str(iv.id): (
                     getattr(iv, "reference_number", str(iv.id)),
                     getattr(iv, "intervention_name", str(iv)),
+                    iv.package.name if iv.package_id else None,
+                    iv.phase.name if iv.phase_id else None,
                 )
                 for iv in interventions
             }

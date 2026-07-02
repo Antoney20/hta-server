@@ -43,6 +43,8 @@ class InterventionReport:
     total_score: int
     criteria_scored: int
     criteria_total: int
+    package: Optional[str]
+    phase: Optional[str]
     scored_at: Optional[str] = None
     reviewers: list[ReviewerStatus] = field(default_factory=list)
     unscored_reviewers: list[ReviewerStatus] = field(default_factory=list)
@@ -100,6 +102,7 @@ class ScoringReportService:
         # 1. Interventions
         qs = (
             InterventionProposal.objects
+            .select_related("package", "phase")
             .prefetch_related("system_categories__system_category")
             .order_by("reference_number")
         )
@@ -125,23 +128,6 @@ class ScoringReportService:
             ] = {}
         scored_index: dict[str, str] = {} 
         
-
-                
-        # for s in (
-        #     InterventionScore.objects
-        #     .select_related("reviewer", "criteria")
-        #     .filter(intervention__in=list(qs))
-        #     .order_by("created_at")
-        # ):
-        #     iid = str(s.intervention_id)   # ← assign iid here first
-        #     (
-        #         score_index
-        #         .setdefault(iid, {})
-        #         .setdefault(s.reviewer_id, {})
-        #     )[s.criteria.criteria.strip()] = ScoringReportService._score_value(s.score)
-
-        #     if iid not in scored_index:
-        #         scored_index[iid] = s.created_at.isoformat()
 
         for s in (
             InterventionScore.objects
@@ -226,6 +212,8 @@ class ScoringReportService:
                 system_categories=[sc.system_category.name for sc in iv.system_categories.all()],
                 scored_at= scored_index.get(iid), 
                 total_score=total_score,
+                package=iv.package.name if iv.package_id else None,
+                phase=iv.phase.name if iv.phase_id else None,
                 criteria_scored=len(scored_criteria),
                 criteria_total=len(all_criteria_names),
                 reviewers=reviewer_statuses,

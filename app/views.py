@@ -504,7 +504,8 @@ class SystemCategoryViewSet(viewsets.ModelViewSet):
 
 class InterventionSystemCategoryViewSet(viewsets.ModelViewSet):
     queryset = InterventionSystemCategory.objects.select_related(
-        "intervention", "system_category"
+        "intervention", "system_category",
+        "intervention__package", "intervention__phase",
     )
     serializer_class = InterventionSystemCategorySerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -528,7 +529,6 @@ class InterventionSystemCategoryViewSet(viewsets.ModelViewSet):
                 return [permissions.AllowAny()]  # already manually validated
             return [permissions.IsAdminUser()]  # forces 403
 
-        # All other actions → authenticated users
         return [permissions.IsAuthenticated()]
  
 class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet):
@@ -1022,7 +1022,7 @@ class AdminScoreViewSet(viewsets.ModelViewSet):
 
 
 class WeightingReportView(APIView):
-    # permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated]
 
     def get(self, request):
         raw = request.query_params.get("intervention", "")
@@ -1036,8 +1036,21 @@ class WeightingReportView(APIView):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
 
-        return Response(asdict(report), status=status.HTTP_200_OK)    
+        data = asdict(report)
 
+        if not is_admin(request.user):
+            data = {
+                "success": report.success,
+                "message": report.message,
+                "reviewer_results": [],
+                "reviewer_scores": [],
+                "reviewer_rankings": [],
+                "average_scores": data["average_scores"],   
+                "average_ranking": data["average_ranking"],
+                "error": None,
+            }
+
+        return Response(data, status=status.HTTP_200_OK)
 
 
 class PublicProposalViewSet(ViewSet):

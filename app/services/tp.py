@@ -64,7 +64,10 @@ class TopicPriorityService:
         """
         return (
             InterventionStatusUpdate.objects
-            .select_related("intervention", "decision")
+            .select_related(
+                "intervention", "decision",
+                "intervention__package", "intervention__phase",
+            )
             .prefetch_related(
                 Prefetch(
                     "intervention__system_categories",
@@ -101,6 +104,7 @@ class TopicPriorityService:
         )
         return (
             InterventionProposal.objects
+            .select_related("package", "phase")
             .annotate(score_count=Count("scores"))
             .filter(score_count__gt=1)
             .exclude(id__in=interventions_with_status)
@@ -153,6 +157,8 @@ class TopicPriorityService:
                     sc.system_category.name
                     for sc in i.system_categories.all()
                 ],
+                "package": i.package.name if i.package_id else None,
+                "phase": i.phase.name if i.phase_id else None,
                 "is_scored": True,
                 "move_to_panel": False,
                 "created_at": None,

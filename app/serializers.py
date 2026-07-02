@@ -133,6 +133,8 @@ class InterventionSystemCategorySerializer(serializers.ModelSerializer):
         source="system_category",
         read_only=True
     )
+    package = serializers.CharField(source="intervention.package.name", read_only=True)
+    phase = serializers.CharField(source="intervention.phase.name", read_only=True)
 
     class Meta:
         model = InterventionSystemCategory
@@ -141,10 +143,11 @@ class InterventionSystemCategorySerializer(serializers.ModelSerializer):
             "intervention",
             "system_category",
             "system_category_detail",
+            "package",
+            "phase",
             "assigned_by",
             "created_at",
         ]
-
 
 
 class CriteriaInformationSerializer(serializers.ModelSerializer):
@@ -313,6 +316,9 @@ class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
     decision = DecisionTypeSerializer(read_only=True)
     system_categories = serializers.SerializerMethodField()
     is_scored = serializers.BooleanField(read_only=True)  # from annotation
+    package = serializers.CharField(source="intervention.package.name", read_only=True)
+    phase = serializers.CharField(source="intervention.phase.name", read_only=True)
+
 
     class Meta:
         model = InterventionStatusUpdate
@@ -321,6 +327,7 @@ class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
             "reference_number",
             "intervention_id",
             "intervention_name",
+            "package", "phase",
             "decision",
             "decision_date",
             "feedback",
