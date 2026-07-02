@@ -475,6 +475,8 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
     )
 
     documents = ProposalDocumentSerializer(many=True, read_only=True)
+    package_name = serializers.CharField(source="package.name", read_only=True)
+    phase_name = serializers.CharField(source="phase.name", read_only=True)
 
     class Meta:
         model = InterventionProposal
@@ -484,6 +486,7 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
             'intervention_name', 'intervention_type', 'beneficiary',
             'justification', 'expected_impact', 'additional_info',
             'reference_number',
+            'package_name', 'phase_name',
             'signature', 'date',
             'uploaded_documents', 'uploadedDocument',
             'is_public',

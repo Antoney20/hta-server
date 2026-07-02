@@ -40,8 +40,8 @@ from app.services import criteria_info
 from app.services.agentic import EvidenceService
 from app.services.benefits_package import create_package, delete_package, list_packages, update_package
 from app.services.evidence import AssessmentEvidenceService
+from app.services.phase import InterventionPhaseService
 from app.services.program import InterventionPackageService
-from app.services.protocol import activate_protocol_guide, create_protocol_guide, create_scoring_model, delete_protocol_guide, delete_scoring_model, finalize_scoring_model, get_active_protocol, list_protocol_guides, list_scoring_models, score_scoring_model, update_protocol_guide, update_scoring_model
 from app.services.public_view import PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
 from app.services.tp import TopicPriorityService
@@ -52,7 +52,7 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
@@ -74,14 +74,13 @@ from .serializers import (
     FeedbackCategoryWriteSerializer,
     FeedbackEmailLogSerializer,
     InterventionPackageSerializer,
+    InterventionPhaseSerializer,
     InterventionScoreCreateSerializer,
     InterventionScoringWindowSerializer,
     InterventionStatusUpdateSerializer,
     InterventionStatusUpdateWriteSerializer,
     NationalProgramProposalSerializer,
     NationalProgramSerializer,
-    ProtocolGuideSerializer,
-    ScoringModelSerializer,
     SelectionToolSerializer,
     SubActivitySerializer,
     SystemCategorySerializer,
@@ -1915,11 +1914,14 @@ class AssessmentEvidenceViewSet(viewsets.ViewSet):
 
 class InterventionPackageViewSet(viewsets.ViewSet):
 
+    ADMIN_ACTIONS = {
+        "create", "update", "partial_update", "destroy",
+        "link", "unlink", "bulk_upload",
+    }
+
     def get_permissions(self):
-        if self.action == "destroy":
+        if self.action in self.ADMIN_ACTIONS:
             return [IsAdmin()]
-        if self.action in ("create", "update", "partial_update", "bulk_upload"):
-            return [IsAuthenticated()]
         return [IsAuthenticated()]
 
     def list(self, request):
@@ -1995,7 +1997,88 @@ class InterventionPackageViewSet(viewsets.ViewSet):
         return _ok(InterventionPackageService.grouped())
 
 
+class InterventionPhaseViewSet(viewsets.ViewSet):
 
+    ADMIN_ACTIONS = {
+        "create", "update", "partial_update", "destroy",
+        "link", "unlink", "bulk_upload",
+    }
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS:
+            return [IsAdmin()]
+        return [IsAuthenticated()]
+
+    def list(self, request):
+        qs = InterventionPhaseService.list_phases()
+        return _ok(InterventionPhaseSerializer(qs, many=True).data)
+
+    def retrieve(self, request, pk=None):
+        phase, err = _get_or_404(InterventionPhase, pk=pk)
+        if err:
+            return err
+        return _ok(InterventionPhaseSerializer(phase).data)
+
+    def create(self, request):
+        s = InterventionPhaseSerializer(data=request.data)
+        s.is_valid(raise_exception=True)
+        phase = InterventionPhaseService.create_phase(s.validated_data)
+        return _ok(InterventionPhaseSerializer(phase).data, status_code=201)
+
+    def partial_update(self, request, pk=None):
+        phase, err = _get_or_404(InterventionPhase, pk=pk)
+        if err:
+            return err
+        s = InterventionPhaseSerializer(phase, data=request.data, partial=True)
+        s.is_valid(raise_exception=True)
+        phase = InterventionPhaseService.update_phase(phase, s.validated_data)
+        return _ok(InterventionPhaseSerializer(phase).data)
+
+    def destroy(self, request, pk=None):
+        if getattr(request.user, "role", None) != "admin":
+            return _err("Not authorized to perform this action", status_code=403)
+        phase, err = _get_or_404(InterventionPhase, pk=pk)
+        if err:
+            return err
+        InterventionPhaseService.delete_phase(phase)
+        return _ok({"deleted": True})
+
+    @action(detail=True, methods=["post"], url_path="link")
+    def link(self, request, pk=None):
+        phase, err = _get_or_404(InterventionPhase, pk=pk)
+        if err:
+            return err
+        ref = (request.data.get("reference_number") or "").strip()
+        if not ref:
+            return _err("reference_number is required", status_code=400)
+        ok = InterventionPhaseService.link_one(phase, ref)
+        return _ok({"linked": ok}) if ok else _err("No proposal found for reference", status_code=404)
+
+    @action(detail=True, methods=["post"], url_path="unlink")
+    def unlink(self, request, pk=None):
+        ref = (request.data.get("reference_number") or "").strip()
+        if not ref:
+            return _err("reference_number is required", status_code=400)
+        proposal = (
+            InterventionProposal.objects.filter(reference_number=ref, phase_id=pk).first()
+            or NationalProgramProposal.objects.filter(reference_number=ref, phase_id=pk).first()
+        )
+        if not proposal:
+            return _err("No linked proposal found for that reference", status_code=404)
+        proposal.phase = None
+        proposal.save(update_fields=["phase"])
+        return _ok({"unlinked": True})
+
+    @action(detail=False, methods=["post"], url_path="bulk-upload")
+    def bulk_upload(self, request):
+        rows = request.data.get("rows", [])
+        if not isinstance(rows, list):
+            return _err("rows must be a list", status_code=400)
+        return _ok(InterventionPhaseService.bulk_upload(rows))
+
+    @action(detail=False, methods=["get"], url_path="grouped")
+    def grouped(self, request):
+        return _ok(InterventionPhaseService.grouped())
 
 
 # agentic 
@@ -2040,145 +2123,6 @@ class EvidenceViewSet(viewsets.ReadOnlyModelViewSet):
         return _ok(summary, "Batch generation complete")
 
 
-
-class ScoringModelViewSet(viewsets.ViewSet):
-    def get_permissions(self):
-        if self.action == "destroy":
-            return [IsAuthenticated(), IsAdmin()]
-        return [IsAuthenticated()]
- 
-    def list(self, request):
-        qs = list_scoring_models()
-        return _ok(ScoringModelSerializer(qs, many=True).data)
- 
-    def retrieve(self, request, pk=None):
-        obj, err = _get_or_404(ScoringModel, pk=pk)
-        if err:
-            return err
-        return _ok(ScoringModelSerializer(obj).data)
- 
-    def create(self, request):
-        ser = ScoringModelSerializer(data=request.data)
-        if not ser.is_valid():
-            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = create_scoring_model(**ser.validated_data)
-        return _ok(ScoringModelSerializer(obj).data, status.HTTP_201_CREATED)
- 
-    def update(self, request, pk=None):
-        obj, err = _get_or_404(ScoringModel, pk=pk)
-        if err:
-            return err
-        ser = ScoringModelSerializer(obj, data=request.data)
-        if not ser.is_valid():
-            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = update_scoring_model(obj, **ser.validated_data)
-        return _ok(ScoringModelSerializer(obj).data)
- 
-    def partial_update(self, request, pk=None):
-        obj, err = _get_or_404(ScoringModel, pk=pk)
-        if err:
-            return err
-        ser = ScoringModelSerializer(obj, data=request.data, partial=True)
-        if not ser.is_valid():
-            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = update_scoring_model(obj, **ser.validated_data)
-        return _ok(ScoringModelSerializer(obj).data)
- 
-    def destroy(self, request, pk=None):
-        obj, err = _get_or_404(ScoringModel, pk=pk)
-        if err:
-            return err
-        delete_scoring_model(obj)
-        return _ok({"deleted": str(pk)})
- 
-    @action(detail=True, methods=["post"])
-    def score(self, request, pk=None):
-        obj, err = _get_or_404(ScoringModel, pk=pk)
-        if err:
-            return err
-        guide = services.resolve_protocol(
-            protocol_id=request.data.get("protocol_id"),
-            version=request.data.get("version"),
-        )
-        if guide is None:
-            return _err("No protocol guide specified and none is active.")
-        score_scoring_model(obj, guide)
-        return _ok(ScoringModelSerializer(obj).data)
- 
-    @action(detail=True, methods=["post"])
-    def finalize(self, request, pk=None):
-        obj, err = _get_or_404(ScoringModel, pk=pk)
-        if err:
-            return err
-        finalize_scoring_model(obj)
-        return _ok(ScoringModelSerializer(obj).data)
- 
- 
-class ProtocolGuideViewSet(viewsets.ViewSet):
-    def get_permissions(self):
-        if self.action == "destroy":
-            return [IsAuthenticated(), IsAdmin()]
-        return [IsAuthenticated()]
- 
-    def list(self, request):
-        qs = list_protocol_guides()
-        return _ok(ProtocolGuideSerializer(qs, many=True).data)
- 
-    def retrieve(self, request, pk=None):
-        obj, err = _get_or_404(ProtocolGuide, pk=pk)
-        if err:
-            return err
-        return _ok(ProtocolGuideSerializer(obj).data)
- 
-    def create(self, request):
-        ser = ProtocolGuideSerializer(data=request.data)
-        if not ser.is_valid():
-            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = create_protocol_guide(**ser.validated_data)
-        return _ok(ProtocolGuideSerializer(obj).data, status.HTTP_201_CREATED)
- 
-    def update(self, request, pk=None):
-        obj, err = _get_or_404(ProtocolGuide, pk=pk)
-        if err:
-            return err
-        ser = ProtocolGuideSerializer(obj, data=request.data)
-        if not ser.is_valid():
-            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj =  update_protocol_guide(obj, **ser.validated_data)
-        return _ok(ProtocolGuideSerializer(obj).data)
- 
-    def partial_update(self, request, pk=None):
-        obj, err = _get_or_404(ProtocolGuide, pk=pk)
-        if err:
-            return err
-        ser = ProtocolGuideSerializer(obj, data=request.data, partial=True)
-        if not ser.is_valid():
-            return _err(ser.errors, status.HTTP_400_BAD_REQUEST)
-        obj = update_protocol_guide(obj, **ser.validated_data)
-        return _ok(ProtocolGuideSerializer(obj).data)
- 
-    def destroy(self, request, pk=None):
-        obj, err = _get_or_404(ProtocolGuide, pk=pk)
-        if err:
-            return err
-        delete_protocol_guide(obj)
-        return _ok({"deleted": str(pk)})
- 
-    @action(detail=True, methods=["post"])
-    def activate(self, request, pk=None):
-        obj, err = _get_or_404(ProtocolGuide, pk=pk)
-        if err:
-            return err
-        activate_protocol_guide(obj)
-        return _ok(ProtocolGuideSerializer(obj).data)
- 
-    @action(detail=False, methods=["get"])
-    def active(self, request):
-        guide = get_active_protocol()
-        if guide is None:
-            return _err("No active protocol guide.", status.HTTP_404_NOT_FOUND)
-        return _ok(ProtocolGuideSerializer(guide).data)
- 
 
 
 class BenefitPackageViewSet(viewsets.ViewSet):

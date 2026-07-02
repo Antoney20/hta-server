@@ -269,7 +269,12 @@ class InterventionProposal(models.Model):
         related_name="interventions",
         null=True, blank=True,
     )
-
+    phase = models.ForeignKey(
+        "app.InterventionPhase",
+        on_delete=models.SET_NULL,
+        related_name="interventions",
+        null=True, blank=True,
+    )
     # Submission Details
     signature = models.CharField(max_length=200)
     date = models.DateField(blank=True, null=True)

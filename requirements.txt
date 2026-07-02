@@ -18,3 +18,4 @@ requests
 user-agents
 django-crontab
 numpy
+google-genai

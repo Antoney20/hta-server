@@ -16,13 +16,12 @@ from .views import (
     FeedbackCategoryViewSet,
     FeedbackEmailLogViewSet,
     InterventionPackageViewSet,
+    InterventionPhaseViewSet,
     InterventionProposalViewSet,
     InterventionScoringWindowViewSet,
     NationalProgramProposalViewSet,
     NationalProgramViewSet,
-    ProtocolGuideViewSet,
     PublicProposalViewSet,
-    ScoringModelViewSet,
     ScoringReportView,
     SelectionToolViewSet,
     SubActivityViewSet,
@@ -60,9 +59,8 @@ router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="ass
 router.register(r"evidence-criteria", EvidenceCriterionViewSet, basename="evidence-criteria")
 router.register(r"evidence-extractions", EvidenceExtractionViewSet, basename="evidence-extraction")
 router.register(r"intervention-package", InterventionPackageViewSet, basename="assesment-package")
+router.register(r"intervention-phases", InterventionPhaseViewSet, basename="intervention-phase")
 router.register(r"agentic", EvidenceViewSet, basename="agentic")
-router.register(r"scoring-models", ScoringModelViewSet, basename="scoring-model")
-router.register(r"protocol-guides", ProtocolGuideViewSet, basename="protocol-guide")
 router.register(r"benefit-packages", BenefitPackageViewSet, basename="benefit-package")
  
 # router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")

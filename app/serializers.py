@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, ProtocolGuide, ScoringModel, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -24,6 +24,13 @@ class InterventionPackageSerializer(serializers.ModelSerializer):
         c = getattr(obj, "national_proposals_count", None)
         return c if c is not None else obj.national_proposals.count()
 
+
+class InterventionPhaseSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = InterventionPhase
+        fields = "__all__"
+        read_only_fields = ("id", "created_at", "updated_at")
+
 class NationalProgramSerializer(serializers.ModelSerializer):
     reference_template = serializers.ReadOnlyField()
 
@@ -37,12 +44,16 @@ class NationalProgramProposalSerializer(serializers.ModelSerializer):
     # handy extras for the client, no extra queries (FK already selected)
     program_code = serializers.CharField(source="program.code", read_only=True)
     program_name = serializers.CharField(source="program.name", read_only=True)
+    package_name = serializers.CharField(source="package.name", read_only=True)
+    phase_name = serializers.CharField(source="phase.name", read_only=True)
 
     class Meta:
         model = NationalProgramProposal
         fields = "__all__"
-        read_only_fields = ["reference_number", "created_by", "created_at", "updated_at"]
-
+        read_only_fields = [
+            "reference_number", "package_name", "phase_name",
+            "created_by", "created_at", "updated_at",
+        ]
 
 class EvidenceCriterionSerializer(serializers.ModelSerializer):
     class Meta:
@@ -777,27 +788,14 @@ class EvidenceSerializer(serializers.ModelSerializer):
         read_only_fields = [f.name for f in Evidence._meta.fields]
  
 
- 
-class ScoringModelSerializer(serializers.ModelSerializer):
-    row_count = serializers.IntegerField(read_only=True)
- 
-    class Meta:
-        model = ScoringModel
-        fields = "__all__"
-        read_only_fields = ("id", "scores", "status", "uploaded_at", "updated_at")
-
- 
-class ProtocolGuideSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = ProtocolGuide
-        fields = "__all__"
-        read_only_fields = ("id", "created_at", "updated_at")
-
-
 
 class BenefitPackageSerializer(serializers.ModelSerializer):
     class Meta:
         model = BenefitPackage
         fields = "__all__"
         read_only_fields = ("id", "created_at", "updated_at")
+
+
+
+
 
