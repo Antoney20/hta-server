@@ -70,6 +70,8 @@ class InterventionPhaseService:
                     "kind": "intervention",
                     "id": str(i.id),
                     "reference_number": i.reference_number,
+                    "phase": i.phase.name if i.phase else None,
+                    "package": i.package.name if i.package else None,
                     "name": getattr(i, "intervention_name", None),
                 }
                 for i in phase.interventions.all()
@@ -78,6 +80,8 @@ class InterventionPhaseService:
                     "kind": "program",
                     "id": str(p.id),
                     "reference_number": p.reference_number,
+                     "phase": p.phase.name if p.phase else None,
+                     "package": p.package.name if p.package else None,
                     "name": p.title,
                 }
                 for p in phase.national_proposals.all()

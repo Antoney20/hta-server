@@ -68,7 +68,7 @@ def _next_sequence(template, period):
     last = (
         NationalProgramProposal.objects
         .filter(reference_number__startswith=prefix)
-        .order_by("-reference_number")               # zero-padded → lexical == numeric
+        .order_by("-reference_number")              
         .values_list("reference_number", flat=True)
         .first()
     )
@@ -368,17 +368,38 @@ class DecisionType(models.Model):
         return self.name
 
 
-
 class InterventionStatusUpdate(models.Model):
-
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    intervention = models.ForeignKey( InterventionProposal, on_delete=models.CASCADE, related_name="status_updates",)
-    decision = models.ForeignKey( DecisionType, on_delete=models.PROTECT, null=True, blank=True, default=get_pending_decision,  related_name="status_updates", help_text="Formal HTA decision once reached.", )
+    intervention = models.ForeignKey(
+        InterventionProposal,
+        on_delete=models.CASCADE,
+        related_name="status_updates",
+        null=True, blank=True,
+    )
+    national_proposal = models.ForeignKey(
+        NationalProgramProposal,
+        on_delete=models.CASCADE,
+        related_name="status_updates",
+        null=True, blank=True,
+    )
+    decision = models.ForeignKey(
+        DecisionType,
+        on_delete=models.PROTECT,
+        null=True, blank=True,
+        default=get_pending_decision,
+        related_name="status_updates",
+        help_text="Formal HTA decision once reached.",
+    )
+    routing_decision =models.TextField(blank=True,  help_text="Optional routing decision.",
+    )
     decision_date = models.DateField(null=True, blank=True)
-    feedback = models.TextField( blank=True, help_text="Plain-language feedback visible to the submitter.",)
-    additional_info = models.TextField( blank=True, help_text="More info supporting the decision.", )
-    move_to_panel = models.BooleanField(  default=False, help_text="Mark intervention to move to panel review.",)
-    updated_by = models.ForeignKey( User,  on_delete=models.SET_NULL, null=True, related_name="intervention_status_updates",)
+    feedback = models.TextField(blank=True, help_text="Plain-language feedback visible to the submitter.")
+    additional_info = models.TextField(blank=True, help_text="More info supporting the decision.")
+    move_to_panel = models.BooleanField(default=False, help_text="Mark intervention to move to panel review.")
+    updated_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True,
+        related_name="intervention_status_updates",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -386,14 +407,13 @@ class InterventionStatusUpdate(models.Model):
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["intervention"], name="idx_status_intervention"),
+            models.Index(fields=["national_proposal"], name="idx_status_national"),
             models.Index(fields=["decision_date"], name="idx_status_decision_date"),
             models.Index(fields=["move_to_panel"], name="idx_status_move_to_panel"),
         ]
 
     def __str__(self):
-        return f"{self.intervention} — Status Update"
-    
-    
+        return f"{self.intervention or self.national_proposal} — Status Update"
 
 
 

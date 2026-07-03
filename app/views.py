@@ -1063,16 +1063,18 @@ class PublicProposalViewSet(ViewSet):
 def _can_manage(user) -> bool:
     return user.role in (UserRole.ADMIN, UserRole.SECRETARIAT)
 
-
 class TopicPriorityViewSet(viewsets.ModelViewSet):
-    """Returns status info about an intervention."""
+    """Returns status info about an intervention or national program proposal."""
 
     permission_classes = [permissions.IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         return (
             InterventionStatusUpdate.objects
-            .select_related("intervention", "decision")
+            .select_related(
+                "intervention", "decision",
+                "national_proposal",
+            )
             .order_by("-created_at")
         )
 
@@ -1109,7 +1111,6 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
 
         return Response(result, status=status.HTTP_200_OK)
 
-
     @action(
         detail=True,
         methods=["post"],
@@ -1118,6 +1119,13 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
     )
     def move_to_panel(self, request, pk=None):
         instance = self.get_object()
+
+        if not instance.intervention_id:
+            return Response(
+                {"detail": "Move-to-panel applies to interventions only."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
         result = TopicPriorityService.move_to_panel(
             str(instance.intervention_id), request.user
         )
@@ -1131,6 +1139,12 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
     )
     def undo_move_to_panel(self, request, pk=None):
         instance = self.get_object()
+
+        if not instance.intervention_id:
+            return Response(
+                {"detail": "Move-to-panel applies to interventions only."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
 
         has_scores = CriteriaAppraisalScore.objects.filter(
             intervention=instance.intervention
@@ -1169,7 +1183,6 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
             status=status.HTTP_200_OK,
         )
 
-
     def list(self, request, *args, **kwargs):
         return Response(TopicPriorityService.fetch())
 
@@ -1202,8 +1215,6 @@ class TopicPriorityViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         TopicPriorityService.delete(instance)
         return Response(status=status.HTTP_204_NO_CONTENT)
-    
-
 
 class DecisionTypeViewSet(viewsets.ModelViewSet):
     """

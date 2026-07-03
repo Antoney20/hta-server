@@ -310,25 +310,27 @@ class DecisionTypeCreateSerializer(serializers.ModelSerializer):
 
 
 class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
-    reference_number = serializers.CharField(source="intervention.reference_number")
-    intervention_id = serializers.CharField(source="intervention.id")
-    intervention_name = serializers.CharField(source="intervention.intervention_name")
+    reference_number = serializers.SerializerMethodField()
+    intervention_id = serializers.SerializerMethodField()
+    intervention_name = serializers.SerializerMethodField()
+    target_type = serializers.SerializerMethodField()
     decision = DecisionTypeSerializer(read_only=True)
     system_categories = serializers.SerializerMethodField()
     is_scored = serializers.BooleanField(read_only=True)  # from annotation
-    package = serializers.CharField(source="intervention.package.name", read_only=True)
-    phase = serializers.CharField(source="intervention.phase.name", read_only=True)
-
+    package = serializers.SerializerMethodField()
+    phase = serializers.SerializerMethodField()
 
     class Meta:
         model = InterventionStatusUpdate
         fields = [
             "id",
+            "target_type",
             "reference_number",
             "intervention_id",
             "intervention_name",
             "package", "phase",
             "decision",
+            "routing_decision",
             "decision_date",
             "feedback",
             "system_categories",
@@ -338,14 +340,46 @@ class InterventionStatusUpdateSerializer(serializers.ModelSerializer):
             "updated_at",
         ]
 
+    # whichever target this row points at
+    def _target(self, obj):
+        return obj.intervention or obj.national_proposal
+
+    def get_target_type(self, obj):
+        return "intervention" if obj.intervention_id else "national_proposal"
+
+    def get_reference_number(self, obj):
+        t = self._target(obj)
+        return getattr(t, "reference_number", None)
+
+    def get_intervention_id(self, obj):
+        t = self._target(obj)
+        return str(t.id) if t else None
+
+    def get_intervention_name(self, obj):
+        if obj.intervention_id:
+            return obj.intervention.intervention_name
+        if obj.national_proposal_id:
+            return obj.national_proposal.title
+        return None
+
+    def get_package(self, obj):
+        t = self._target(obj)
+        return t.package.name if t and t.package_id else None
+
+    def get_phase(self, obj):
+        t = self._target(obj)
+        return t.phase.name if t and t.phase_id else None
+
     def get_system_categories(self, obj):
-        return list(
-            obj.intervention.system_categories.values_list(
-                "system_category__name", flat=True
+        # only interventions carry system categories
+        if obj.intervention_id:
+            return list(
+                obj.intervention.system_categories.values_list(
+                    "system_category__name", flat=True
+                )
             )
-        )
-        
-        
+        return []
+
 
 class InterventionStatusUpdateWriteSerializer(serializers.ModelSerializer):
     """Write — secretariat / admin only."""
@@ -354,19 +388,14 @@ class InterventionStatusUpdateWriteSerializer(serializers.ModelSerializer):
         model = InterventionStatusUpdate
         fields = [
             "intervention",
+            "national_proposal",
             "decision",
+            "routing_decision",
             "decision_date",
             "feedback",
             "additional_info",
         ]
 
-    def validate(self, attrs):
-        # decision_date is required when a formal decision is set
-        if attrs.get("decision") and not attrs.get("decision_date"):
-            raise serializers.ValidationError(
-                {"decision_date": "A decision date is required when setting a decision."}
-            )
-        return attrs
 
 
 

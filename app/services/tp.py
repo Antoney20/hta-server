@@ -12,7 +12,7 @@ from app.models import (
 )
 from app.serializers import InterventionStatusUpdateSerializer
 
-CACHE_KEY = "public:topic-priority:v1"
+CACHE_KEY = "public:topic-priority:v2"   # bumped: payload shape changed
 CACHE_TIMEOUT = 60 * 30  # 30 minutes
 
 PENDING_DECISION_NAME = "Pending"
@@ -33,17 +33,21 @@ def get_pending_decision_id():
 class TopicPriorityService:
     """
     Responsibilities:
-    - Unified querying of InterventionStatusUpdate rows + scored-only interventions
+    - Unified querying of InterventionStatusUpdate rows (intervention OR national
+      proposal targets) + scored-only interventions
     - Serialization and cache management
     - move_to_panel for single and bulk operations
       (auto-creates a minimal status update for scored-only rows)
 
-    Response shape:
-    - All InterventionStatusUpdate records (with decision/status)
-    - All interventions with >1 score that have no status update yet (id=null rows)
+    Response shape (each result row):
+    - Status update rows (with decision/status), for either target type
+    - Interventions with >1 score and no status update yet (id=null rows)
     - is_scored: always bool, never null
     - move_to_panel: always bool
     - decision: always set — 'Pending' sentinel for rows without a formal decision
+
+    Scored-only logic is intervention-only: national program proposals are not
+    scored via InterventionScore, so they never appear as scored-only rows.
     """
 
     @staticmethod
@@ -59,14 +63,18 @@ class TopicPriorityService:
     @classmethod
     def _status_update_queryset(cls):
         """
-        All InterventionStatusUpdate rows annotated with is_scored.
-        is_scored = True when the intervention has >1 score.
+        All InterventionStatusUpdate rows (both target types) annotated with
+        is_scored. For national-proposal rows intervention_id is null, so the
+        score subquery matches nothing and is_scored is False — correct, since
+        national proposals aren't scored through InterventionScore.
         """
         return (
             InterventionStatusUpdate.objects
             .select_related(
                 "intervention", "decision",
                 "intervention__package", "intervention__phase",
+                "national_proposal",
+                "national_proposal__package", "national_proposal__phase",
             )
             .prefetch_related(
                 Prefetch(
@@ -98,9 +106,12 @@ class TopicPriorityService:
         """
         Interventions with >1 score that have NO InterventionStatusUpdate row at all.
         These surface as id=null / Pending rows in the response.
+        National proposals are excluded by design (no InterventionScore).
         """
-        interventions_with_status = InterventionStatusUpdate.objects.values_list(
-            "intervention_id", flat=True
+        interventions_with_status = (
+            InterventionStatusUpdate.objects
+            .filter(intervention__isnull=False)
+            .values_list("intervention_id", flat=True)
         )
         return (
             InterventionProposal.objects
@@ -139,18 +150,21 @@ class TopicPriorityService:
     @staticmethod
     def _build_payload(status_data, scored_only_interventions) -> dict:
         """
-        Merges serialized status update rows with scored-only intervention dicts.
-        Status update rows come first (they carry formal decision data).
+        Merges serialized status update rows (both target types) with scored-only
+        intervention dicts. Status update rows come first (they carry formal
+        decision data).
         """
         pending = TopicPriorityService._get_pending_decision_data()
 
         scored_only = [
             {
                 "id": None,
+                "target_type": "intervention",
                 "reference_number": i.reference_number,
                 "intervention_id": str(i.id),
                 "intervention_name": i.intervention_name,
                 "decision": pending,
+                "routing_decision": None,
                 "decision_date": None,
                 "feedback": "",
                 "system_categories": [
@@ -226,7 +240,7 @@ class TopicPriorityService:
         cls.invalidate()
 
     # ------------------------------------------------------------------ #
-    #  Move to panel                                                       #
+    #  Move to panel (intervention-only)                                   #
     # ------------------------------------------------------------------ #
 
     @classmethod
@@ -268,7 +282,6 @@ class TopicPriorityService:
 
         Raises ValueError if any intervention_id is not found.
         """
-        # Validate all IDs exist
         interventions = InterventionProposal.objects.filter(id__in=intervention_ids)
         if interventions.count() != len(intervention_ids):
             found = set(str(i.id) for i in interventions)
@@ -308,7 +321,6 @@ class TopicPriorityService:
 
         cls.invalidate()
         return {"updated": updated_count}
-
 
     @staticmethod
     def invalidate() -> None:
