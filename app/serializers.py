@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionScoringWindow, InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -762,21 +762,6 @@ class SubActivitySerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("assigned_to must be a list of user IDs.")
 
 
-class InterventionScoringWindowSerializer(serializers.ModelSerializer):
-    status = serializers.CharField(read_only=True)
-    is_open = serializers.BooleanField(read_only=True)
-    effective_close_at = serializers.DateTimeField(read_only=True)
-
-    class Meta:
-        model = InterventionScoringWindow
-        fields = "__all__"
-        read_only_fields = ("created_at", "updated_at", "created_by", "updated_by")
-
-
-
-        
-        
-
 class EvidenceDocumentSerializer(serializers.ModelSerializer):
     name = serializers.SerializerMethodField()
  
@@ -816,14 +801,6 @@ class AssessmentEvidenceSerializer(serializers.ModelSerializer):
 
 
  
-class EvidenceSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = Evidence
-        fields = "__all__"
-        # generated, never written by clients
-        read_only_fields = [f.name for f in Evidence._meta.fields]
- 
-
 
 class BenefitPackageSerializer(serializers.ModelSerializer):
     class Meta:

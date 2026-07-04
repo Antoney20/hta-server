@@ -35,9 +35,7 @@ from app.core.services.evidence_extraction import EvidenceExtractionService
 from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
-from app.core.services.scoring_window import ScoringWindowService
 from app.services import criteria_info
-from app.services.agentic import EvidenceService
 from app.services.benefits_package import create_package, delete_package, list_packages, update_package
 from app.services.evidence import AssessmentEvidenceService
 from app.services.phase import InterventionPhaseService
@@ -52,7 +50,7 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, Evidence, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
@@ -69,14 +67,12 @@ from .serializers import (
     DecisionTypeSerializer,
     EvidenceCriterionSerializer,
     EvidenceExtractionSerializer,
-    EvidenceSerializer,
     FeedbackCategorySerializer,
     FeedbackCategoryWriteSerializer,
     FeedbackEmailLogSerializer,
     InterventionPackageSerializer,
     InterventionPhaseSerializer,
     InterventionScoreCreateSerializer,
-    InterventionScoringWindowSerializer,
     InterventionStatusUpdateSerializer,
     InterventionStatusUpdateWriteSerializer,
     NationalProgramProposalSerializer,
@@ -1768,74 +1764,6 @@ class SubActivityViewSet(viewsets.ModelViewSet):
         sub.completed_by = request.user
         sub.save(update_fields=["status", "completed_at", "completed_by"])
         return _ok(self.get_serializer(sub).data, f"'{sub.name}' marked as completed. Well done!")
- 
- 
- 
- 
-
-
-class InterventionScoringWindowViewSet(viewsets.ModelViewSet):
-    serializer_class = InterventionScoringWindowSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        params = {k: self.request.query_params.get(k) for k in ("intervention", "ref", "level")}
-        return ScoringWindowService.list(params)
-
-    def list(self, request, *args, **kwargs):
-        qs = self.filter_queryset(self.get_queryset())
-        return _ok(self.get_serializer(qs, many=True).data, "Scoring windows fetched.")
-
-    def retrieve(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-        except Exception:
-            return _err("Scoring window not found.", 404)
-        return _ok(self.get_serializer(instance).data, "Scoring window fetched.")
-
-    def create(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        if not serializer.is_valid():
-            return _err("Invalid data.", 400, serializer.errors)
-        try:
-            window = ScoringWindowService.create(request.user, serializer)
-        except PermissionDenied as e:
-            return _err(str(e), 403)
-        return _ok(self.get_serializer(window).data, "Scoring window created.", 201)
-
-    def update(self, request, *args, **kwargs):
-        partial = kwargs.pop("partial", False)
-        try:
-            instance = self.get_object()
-        except Exception:
-            return _err("Scoring window not found. It may have already been deleted.", 404)
-
-        serializer = self.get_serializer(instance, data=request.data, partial=partial)
-        if not serializer.is_valid():
-            return _err("Invalid data.", 400, serializer.errors)
-        try:
-            window = ScoringWindowService.update(request.user, serializer)
-        except PermissionDenied as e:
-            return _err(str(e), 403)
-        return _ok(self.get_serializer(window).data, "Scoring window updated.")
-
-    def partial_update(self, request, *args, **kwargs):
-        kwargs["partial"] = True
-        return self.update(request, *args, **kwargs)
-
-    def destroy(self, request, *args, **kwargs):
-        try:
-            instance = self.get_object()
-        except Exception:
-            return _err("Scoring window not found. It may have already been deleted.", 404)
-        label = str(instance)
-        try:
-            ScoringWindowService.delete(request.user, instance)
-        except PermissionDenied as e:
-            return _err(str(e), 403)
-        return _ok(None, f"Scoring window '{label}' deleted.")
-
-
 
 
 
@@ -2021,6 +1949,8 @@ class InterventionPackageViewSet(viewsets.ViewSet):
         return _ok(InterventionPackageService.grouped())
 
 
+
+# we need to group into batched here
 class InterventionPhaseViewSet(viewsets.ViewSet):
 
     ADMIN_ACTIONS = {
@@ -2103,49 +2033,6 @@ class InterventionPhaseViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["get"], url_path="grouped")
     def grouped(self, request):
         return _ok(InterventionPhaseService.grouped())
-
-
-# agentic 
-
-class EvidenceViewSet(viewsets.ReadOnlyModelViewSet):
-    queryset = Evidence.objects.all()
-    serializer_class = EvidenceSerializer
- 
-    def get_permissions(self):
-        return [IsAuthenticated()]
- 
-    def get_queryset(self):
-        qs = super().get_queryset()
-        ref = self.request.query_params.get("intervention_ref")
-        return qs.filter(intervention_ref=ref) if ref else qs
- 
-    @action(detail=False, methods=["post"], url_path="generate")
-    def generate(self, request):
-        from app.models import EvidenceExtraction  
- 
-        extraction_id = request.data.get("extraction_id")
-        if not extraction_id:
-            return _err("extraction_id is required.", status.HTTP_400_BAD_REQUEST)
- 
-        extraction, err = _get_or_404(EvidenceExtraction, id=extraction_id)
-        if err:
-            return err
- 
-        try:
-            evidence = EvidenceService.generate(extraction, user=request.user)
-        except Exception as exc:  # noqa: BLE001 - surface model/transport failures cleanly
-            return _err(f"Generation failed: {exc}", status.HTTP_502_BAD_GATEWAY)
- 
-        return _ok(EvidenceSerializer(evidence).data, "Evidence generated")
- 
-    @action(detail=False, methods=["post"], url_path="generate-all")
-    def generate_all(self, request):
-        try:
-            summary = EvidenceService.generate_all(user=request.user)
-        except Exception as exc:  # noqa: BLE001 - surface batch failures cleanly
-            return _err(f"Batch generation failed: {exc}", status.HTTP_502_BAD_GATEWAY)
-        return _ok(summary, "Batch generation complete")
-
 
 
 

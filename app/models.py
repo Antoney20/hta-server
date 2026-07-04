@@ -151,7 +151,6 @@ class EvidenceCriterion(models.Model):
     name = models.CharField(max_length=200, unique=True)
     code = models.SlugField(max_length=60, unique=True)          # clinical_effectiveness, safety…
     description = models.TextField(blank=True, null=True)
-    # [{key,label,type,definition,formula,example,required,options}]  ← code-book columns
     field_schema = models.JSONField(default=list, blank=True)
     position = models.PositiveSmallIntegerField(default=0)        # column-group order
     is_active = models.BooleanField(default=True)
@@ -535,12 +534,39 @@ class CriteriaAppraisalTool(models.Model):
     description      = models.TextField(blank=True)
     scoring_approach = models.TextField(blank=True)
     score            = models.IntegerField(null=True, blank=True)
+    #new fields added  - no issue, these are used with evidence and main panel workflows
+    headers          = models.JSONField(default=list, blank=True)  
+    active           = models.BooleanField(default=True)          
     created_at       = models.DateTimeField(auto_now_add=True)
+    updated_at       = models.DateTimeField(auto_now=True)
 
     def __str__(self):
         return self.criteria
 
 
+class CriterionEvidence(models.Model):
+    id                = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    criterion = models.ForeignKey(CriteriaAppraisalTool, on_delete=models.PROTECT, related_name="evidence")
+    intervention      = models.ForeignKey(InterventionProposal, null=True, blank=True,
+                                           on_delete=models.CASCADE, related_name="criterion_evidence")
+    national_proposal = models.ForeignKey(NationalProgramProposal, null=True, blank=True,
+                                           on_delete=models.CASCADE, related_name="criterion_evidence")
+
+    data              = models.JSONField(default=dict, blank=True)     
+    score             = models.IntegerField(null=True, blank=True)     
+    created_at        = models.DateTimeField(auto_now_add=True)
+    updated_at        = models.DateTimeField(auto_now=True)
+
+    @property
+    def target(self):
+        return self.intervention or self.national_proposal
+
+    def __str__(self):
+        return f"{self.criterion.criteria} "
+    
+    
+
+# not used we changed to  remove this 
 class CriteriaAppraisalScore(models.Model):
     """Captures a reviewer's score for one criterion on one intervention."""
     id           = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -785,93 +811,93 @@ class ScoringLevel(models.TextChoices):
     APPRAISAL = "appraisal", "Appraisal"
 
 
-class InterventionScoringWindow(models.Model): # can be removed -- not needed fopr now
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+# class InterventionScoringWindow(models.Model): # can be removed -- not needed fopr now
+#     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
 
-    intervention = models.ForeignKey(InterventionProposal, on_delete=models.CASCADE,related_name="scoring_windows",)
-    level = models.CharField( max_length=20, choices=ScoringLevel.choices, db_index=True,)
-    starts_at = models.DateTimeField( help_text="When scoring opens for reviewers.", )
-    ends_at = models.DateTimeField( help_text="When the scoring window closes.", )
-    submission_delay_minutes = models.PositiveIntegerField( default=2, help_text=("Grace period in minutes after ends_at during which late "   "submissions are still accepted."), )
-    is_active = models.BooleanField( default=True, help_text="Set false to disable this window regardless of dates.",)
-    notes = models.TextField(blank=True)
-    created_by = models.ForeignKey( User, on_delete=models.SET_NULL, null=True, blank=True, related_name="scoring_windows_created",)
-    updated_by = models.ForeignKey( User, on_delete=models.SET_NULL, null=True, blank=True, related_name="scoring_windows_updated",)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+#     intervention = models.ForeignKey(InterventionProposal, on_delete=models.CASCADE,related_name="scoring_windows",)
+#     level = models.CharField( max_length=20, choices=ScoringLevel.choices, db_index=True,)
+#     starts_at = models.DateTimeField( help_text="When scoring opens for reviewers.", )
+#     ends_at = models.DateTimeField( help_text="When the scoring window closes.", )
+#     submission_delay_minutes = models.PositiveIntegerField( default=2, help_text=("Grace period in minutes after ends_at during which late "   "submissions are still accepted."), )
+#     is_active = models.BooleanField( default=True, help_text="Set false to disable this window regardless of dates.",)
+#     notes = models.TextField(blank=True)
+#     created_by = models.ForeignKey( User, on_delete=models.SET_NULL, null=True, blank=True, related_name="scoring_windows_created",)
+#     updated_by = models.ForeignKey( User, on_delete=models.SET_NULL, null=True, blank=True, related_name="scoring_windows_updated",)
+#     created_at = models.DateTimeField(auto_now_add=True)
+#     updated_at = models.DateTimeField(auto_now=True)
 
-    class Meta:
-        unique_together = ("intervention", "level")
-        ordering = ["-created_at"]
-        indexes = [
-            models.Index(fields=["intervention", "level"]),
-            models.Index(fields=["starts_at"]),
-            models.Index(fields=["ends_at"]),
-            models.Index(fields=["is_active"]),
-        ]
+#     class Meta:
+#         unique_together = ("intervention", "level")
+#         ordering = ["-created_at"]
+#         indexes = [
+#             models.Index(fields=["intervention", "level"]),
+#             models.Index(fields=["starts_at"]),
+#             models.Index(fields=["ends_at"]),
+#             models.Index(fields=["is_active"]),
+#         ]
 
-    def __str__(self):
-        ref = getattr(self.intervention, "reference_number", None) or self.intervention_id
-        return f"{ref} — {self.get_level_display()} ({self.starts_at:%Y-%m-%d %H:%M} → {self.ends_at:%Y-%m-%d %H:%M})"
+#     def __str__(self):
+#         ref = getattr(self.intervention, "reference_number", None) or self.intervention_id
+#         return f"{ref} — {self.get_level_display()} ({self.starts_at:%Y-%m-%d %H:%M} → {self.ends_at:%Y-%m-%d %H:%M})"
 
-    # ---------- derived ----------
-    @property
-    def effective_close_at(self):
-        """ends_at + grace period."""
-        return self.ends_at + timedelta(minutes=self.submission_delay_minutes)
+#     # ---------- derived ----------
+#     @property
+#     def effective_close_at(self):
+#         """ends_at + grace period."""
+#         return self.ends_at + timedelta(minutes=self.submission_delay_minutes)
 
-    @property
-    def status(self) -> str:
-        """
-        One of: 'disabled', 'scheduled', 'open', 'grace', 'closed'.
-        """
-        if not self.is_active:
-            return "disabled"
-        now = timezone.now()
-        if now < self.starts_at:
-            return "scheduled"
-        if now <= self.ends_at:
-            return "open"
-        if now <= self.effective_close_at:
-            return "grace"
-        return "closed"
+#     @property
+#     def status(self) -> str:
+#         """
+#         One of: 'disabled', 'scheduled', 'open', 'grace', 'closed'.
+#         """
+#         if not self.is_active:
+#             return "disabled"
+#         now = timezone.now()
+#         if now < self.starts_at:
+#             return "scheduled"
+#         if now <= self.ends_at:
+#             return "open"
+#         if now <= self.effective_close_at:
+#             return "grace"
+#         return "closed"
 
-    @property
-    def is_open(self) -> bool:
-        """True if scoring is currently allowed (including grace period)."""
-        return self.status in ("open", "grace")
+#     @property
+#     def is_open(self) -> bool:
+#         """True if scoring is currently allowed (including grace period)."""
+#         return self.status in ("open", "grace")
 
-    @property
-    def is_in_grace(self) -> bool:
-        return self.status == "grace"
+#     @property
+#     def is_in_grace(self) -> bool:
+#         return self.status == "grace"
 
-    @property
-    def time_remaining(self):
-        """timedelta until effective_close_at, or None if already closed."""
-        now = timezone.now()
-        if now >= self.effective_close_at:
-            return None
-        return self.effective_close_at - now
+#     @property
+#     def time_remaining(self):
+#         """timedelta until effective_close_at, or None if already closed."""
+#         now = timezone.now()
+#         if now >= self.effective_close_at:
+#             return None
+#         return self.effective_close_at - now
 
-    # ---------- validation ----------
-    def clean(self):
-        if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
-            raise ValidationError({"ends_at": "Must be after starts_at."})
+#     # ---------- validation ----------
+#     def clean(self):
+#         if self.starts_at and self.ends_at and self.ends_at <= self.starts_at:
+#             raise ValidationError({"ends_at": "Must be after starts_at."})
 
-    # ---------- lookup helpers ----------
-    @classmethod
-    def get_window(cls, intervention, level: str):
-        """Fetch the window for an (intervention, level), or None."""
-        return cls.objects.filter(intervention=intervention, level=level).first()
+#     # ---------- lookup helpers ----------
+#     @classmethod
+#     def get_window(cls, intervention, level: str):
+#         """Fetch the window for an (intervention, level), or None."""
+#         return cls.objects.filter(intervention=intervention, level=level).first()
 
-    @classmethod
-    def can_score(cls, intervention, level: str) -> bool:
-        """
-        Convenience check used by serializers/services before accepting a score.
-        Returns True if a window exists, is active, and is currently open.
-        """
-        window = cls.get_window(intervention, level)
-        return bool(window and window.is_open)
+#     @classmethod
+#     def can_score(cls, intervention, level: str) -> bool:
+#         """
+#         Convenience check used by serializers/services before accepting a score.
+#         Returns True if a window exists, is active, and is currently open.
+#         """
+#         window = cls.get_window(intervention, level)
+#         return bool(window and window.is_open)
 
 
 
@@ -939,28 +965,6 @@ class AssessmentEvidenceDocument(models.Model):
 
 
  
-class Evidence(models.Model):
-    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    # intervention reference number — stored as text for now
-    intervention_ref = models.CharField(max_length=120, db_index=True)
-    proposal_kind = models.CharField(max_length=20, blank=True, null=True)  
-    data = models.JSONField(default=dict, blank=True)       
-    dropped = models.JSONField(default=list, blank=True)    
-    flags = models.JSONField(default=list, blank=True)     
-    reasoning = models.JSONField(default=dict, blank=True)
-    protocol_version = models.CharField(max_length=20, blank=True, null=True)
-    generated_at = models.DateTimeField(auto_now_add=True)  
-    created_by = models.ForeignKey(
-        User, on_delete=models.SET_NULL, null=True, blank=True,
-        related_name="generated_evidence",
-    )
-
-    class Meta:
-        ordering = ["-generated_at"]
-        indexes = [models.Index(fields=["intervention_ref"])]
-
-    def __str__(self):
-        return f"Evidence · {self.intervention_ref}"
 
 
  
@@ -993,7 +997,6 @@ auditlog.register(InterventionStatusUpdate)
 auditlog.register(AppraisalCriteriaEvidence)
 auditlog.register(Activity)
 auditlog.register(SubActivity)
-auditlog.register(InterventionScoringWindow)
-auditlog.register(Evidence)
+# auditlog.register(InterventionScoringWindow)
 auditlog.register(BenefitPackage)
 

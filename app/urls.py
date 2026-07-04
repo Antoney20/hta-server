@@ -12,13 +12,10 @@ from .views import (
     DecisionTypeViewSet,
     EvidenceCriterionViewSet,
     EvidenceExtractionViewSet,
-    EvidenceViewSet,
     FeedbackCategoryViewSet,
     FeedbackEmailLogViewSet,
     InterventionPackageViewSet,
     InterventionPhaseViewSet,
-    InterventionProposalViewSet,
-    InterventionScoringWindowViewSet,
     NationalProgramProposalViewSet,
     NationalProgramViewSet,
     PublicProposalViewSet,
@@ -54,13 +51,11 @@ router.register(r"appraisal-scores",   CriteriaAppraisalScoreViewSet, basename="
 router.register(r"appraisal-evidence", AppraisalCriteriaEvidenceViewSet, basename="appraisal-evidence",)
 router.register(r"activities", ActivityViewSet, basename="activities")
 router.register(r"sub-activities", SubActivityViewSet, basename="sub-activities")
-router.register(r"scoring-windows", InterventionScoringWindowViewSet, basename="scoring-window")
 router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
 router.register(r"evidence-criteria", EvidenceCriterionViewSet, basename="evidence-criteria")
 router.register(r"evidence-extractions", EvidenceExtractionViewSet, basename="evidence-extraction")
 router.register(r"intervention-package", InterventionPackageViewSet, basename="assesment-package")
 router.register(r"intervention-phases", InterventionPhaseViewSet, basename="intervention-phase")
-router.register(r"agentic", EvidenceViewSet, basename="agentic")
 router.register(r"benefit-packages", BenefitPackageViewSet, basename="benefit-package")
  
 # router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
