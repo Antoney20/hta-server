@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, CriterionEvidence, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -507,16 +507,6 @@ class FeedbackEmailLogSerializer(serializers.ModelSerializer):
         return su.decision_date.strftime("%d %B %Y") if su and su.decision_date else None
   
 
-
-
-
-class CriteriaAppraisalToolSerializer(serializers.ModelSerializer):
-    class Meta:
-        model  = CriteriaAppraisalTool
-        fields = ["id", "criteria", "description", "scoring_approach", "score", "created_at"]
-        read_only_fields = ["id", "created_at"]
-
-
 class CriteriaAppraisalToolWriteSerializer(serializers.ModelSerializer):
     class Meta:
         model  = CriteriaAppraisalTool
@@ -810,5 +800,34 @@ class BenefitPackageSerializer(serializers.ModelSerializer):
 
 
 
+# 
+class CriteriaAppraisalToolSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CriteriaAppraisalTool
+        fields = "__all__"
+        read_only_fields = ("id", "created_at", "updated_at")
+
+class CriterionEvidenceSerializer(serializers.ModelSerializer):
+    target = serializers.SerializerMethodField()
+    criterion_name = serializers.CharField(source="criterion.criteria", read_only=True)
+    package_name = serializers.SerializerMethodField()
+    phase_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CriterionEvidence
+        fields = "__all__"
+        read_only_fields = ("id", "created_at", "updated_at")
+
+    def get_target(self, obj):
+        t = obj.intervention or obj.national_proposal
+        return str(t.id) if t else None
+
+    def get_package_name(self, obj):
+        t = obj.intervention or obj.national_proposal
+        return getattr(getattr(t, "package", None), "name", None)
+
+    def get_phase_name(self, obj):
+        t = obj.intervention or obj.national_proposal
+        return getattr(getattr(t, "phase", None), "name", None)
 
 

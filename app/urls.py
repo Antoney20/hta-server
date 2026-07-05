@@ -9,9 +9,12 @@ from .views import (
     CriteriaAppraisalScoreViewSet,
     CriteriaAppraisalToolViewSet,
     CriteriaInformationViewSet,
+    CriteriaViewSet,
     DecisionTypeViewSet,
+    EvidenceCoverageViewSet,
     EvidenceCriterionViewSet,
     EvidenceExtractionViewSet,
+    EvidenceViewSet,
     FeedbackCategoryViewSet,
     FeedbackEmailLogViewSet,
     InterventionPackageViewSet,
@@ -57,9 +60,12 @@ router.register(r"evidence-extractions", EvidenceExtractionViewSet, basename="ev
 router.register(r"intervention-package", InterventionPackageViewSet, basename="assesment-package")
 router.register(r"intervention-phases", InterventionPhaseViewSet, basename="intervention-phase")
 router.register(r"benefit-packages", BenefitPackageViewSet, basename="benefit-package")
+
  
 # router.register(r"assessment-evidence", AssessmentEvidenceViewSet, basename="assessment-evidence")
- 
+router.register("criteria", CriteriaViewSet, basename="criteria")
+router.register("evidence", EvidenceViewSet, basename="evidence")
+router.register("evidence-coverage", EvidenceCoverageViewSet, basename="evidence-coverage")
 
 
 

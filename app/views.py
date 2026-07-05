@@ -36,6 +36,8 @@ from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.services import criteria_info
+from app.services.appraisal_panel import AppraisalPanelService
+from app.services.evidence_coverage import EvidenceCoverageService as cov
 from app.services.benefits_package import create_package, delete_package, list_packages, update_package
 from app.services.evidence import AssessmentEvidenceService
 from app.services.phase import InterventionPhaseService
@@ -2081,5 +2083,73 @@ class BenefitPackageViewSet(viewsets.ViewSet):
 
 
 
+def _respond(env):
+    if env["ok"]:
+        return Response(env.get("data"), status=env.get("status", 200))
+    return Response({"error": env.get("error")}, status=env.get("status", 400))
+
+class CriteriaViewSet(viewsets.ViewSet):
+    ADMIN_ACTIONS = {"destroy"}
+    WRITE_ACTIONS = {"create", "update", "partial_update", "panel"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS: return [IsAdmin()]
+        if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdmin()]
+        return [IsAuthenticated()]
+
+    def list(self, request):              
+        return _respond(AppraisalPanelService.list_criteria(request.query_params))
+    
+    def retrieve(self, request, pk=None): 
+        return _respond(AppraisalPanelService.get_criterion(pk))
+    def create(self, request):            
+        return _respond(AppraisalPanelService.create_criterion(request.data))
+    def update(self, request, pk=None):   
+        return _respond(AppraisalPanelService.update_criterion(pk, request.data, False))
+    def partial_update(self, request, pk=None): 
+        return _respond(AppraisalPanelService.update_criterion(pk, request.data, True))
+    def destroy(self, request, pk=None):  
+        return _respond(AppraisalPanelService.delete_criterion(pk))
+
+    @action(detail=True, methods=["patch"], url_path="panel")
+    def panel(self, request, pk=None):    
+        return _respond(AppraisalPanelService.configure_criterion(pk, request.data))
+
+class EvidenceViewSet(viewsets.ViewSet):
+    ADMIN_ACTIONS = {"destroy", "bulk_delete"}
+    WRITE_ACTIONS = {"create", "update", "partial_update", "bulk_upload"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS: 
+            return [IsAdmin()]
+        if self.action in self.WRITE_ACTIONS: 
+            return [IsSecretariatOrAdmin()]
+        return [IsAuthenticated()]
+
+    def list(self, request):              
+        return _respond(AppraisalPanelService.list_evidence(request.query_params))
+    def create(self, request):            
+        return _respond(AppraisalPanelService.create_evidence(request.data))
+    def update(self, request, pk=None):   
+        return _respond(AppraisalPanelService.update_evidence(pk, request.data, False))
+    def partial_update(self, request, pk=None): 
+        return _respond(AppraisalPanelService.update_evidence(pk, request.data, True))
+    def destroy(self, request, pk=None):  
+        return _respond(AppraisalPanelService.delete_evidence(pk))
+
+    @action(detail=False, methods=["post"], url_path="bulk-upload")
+    def bulk_upload(self, request):       
+        return _respond(AppraisalPanelService.bulk_upload_evidence(request.data.get("rows", request.data)))
+
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):       
+        return _respond(AppraisalPanelService.bulk_delete_evidence(request.data.get("ids", [])))
 
 
+class EvidenceCoverageViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        return _respond(cov.list_coverage(request.query_params))
+    def retrieve(self, request, pk=None):
+        return _respond(cov.target_detail_by_id(pk))
