@@ -8,7 +8,7 @@ def _ok(data=None, status=200):  return {"ok": True,  "data": data, "status": st
 def _err(msg, status=400):       return {"ok": False, "error": msg, "status": status}
 def _get_or_404(model, pk):      return model.objects.filter(pk=pk).first()
 
-EMPTY_THRESHOLD = 0.075  
+EMPTY_THRESHOLD = 0.60 
 
 
 def _crit_key(name):
@@ -18,7 +18,6 @@ def _crit_key(name):
 
 class EvidenceCoverageService:
 
-    # ── group the 5 tool rows into distinct criteria (by name) ──
     @staticmethod
     def _grouped_criteria():
         """
@@ -252,7 +251,6 @@ class EvidenceCoverageService:
         })
 
 
-# ── helpers ──────────────────────────────────────────────────
 def _is_blank(v):
     if v is None:
         return True

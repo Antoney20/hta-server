@@ -38,6 +38,7 @@ from app.core.services.national import NationalProgramService, ProgramProposalSe
 from app.services import criteria_info
 from app.services.appraisal_panel import AppraisalPanelService
 from app.services.evidence_coverage import EvidenceCoverageService as cov
+from app.services.criteria_rules import CriteriaRuleService as rules
 from app.services.benefits_package import create_package, delete_package, list_packages, update_package
 from app.services.evidence import AssessmentEvidenceService
 from app.services.phase import InterventionPhaseService
@@ -2153,3 +2154,40 @@ class EvidenceCoverageViewSet(viewsets.ViewSet):
         return _respond(cov.list_coverage(request.query_params))
     def retrieve(self, request, pk=None):
         return _respond(cov.target_detail_by_id(pk))
+
+
+
+class CriteriaRuleViewSet(viewsets.ViewSet):
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
+    ADMIN_ACTIONS = {"destroy", "delete_document"}
+    WRITE_ACTIONS = {"create", "update", "partial_update", "bulk_upsert", "add_document"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS: return [IsAdmin()]
+        if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdmin()]
+        return [IsAuthenticated()]
+
+    def list(self, request):              
+        return _respond(rules.list_rules(request.query_params))
+    def retrieve(self, request, pk=None): 
+        return _respond(rules.get_rule(pk))
+    def create(self, request):            
+        return _respond(rules.create_rule(request.data))
+    def update(self, request, pk=None):   
+        return _respond(rules.update_rule(pk, request.data, False))
+    def partial_update(self, request, pk=None): 
+        return _respond(rules.update_rule(pk, request.data, True))
+    def destroy(self, request, pk=None):  
+        return _respond(rules.delete_rule(pk))
+
+    @action(detail=False, methods=["post"], url_path="bulk")
+    def bulk_upsert(self, request):
+        return _respond(rules.bulk_upsert_rules(request.data.get("rules", request.data)))
+
+    @action(detail=True, methods=["post"], url_path="documents")
+    def add_document(self, request, pk=None):
+        return _respond(rules.add_document(pk, request.data, request.FILES.get("file"), request))
+
+    @action(detail=False, methods=["delete"], url_path=r"documents/(?P<doc_id>[^/.]+)")
+    def delete_document(self, request, doc_id=None):
+        return _respond(rules.delete_document(doc_id))

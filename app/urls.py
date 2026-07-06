@@ -9,6 +9,7 @@ from .views import (
     CriteriaAppraisalScoreViewSet,
     CriteriaAppraisalToolViewSet,
     CriteriaInformationViewSet,
+    CriteriaRuleViewSet,
     CriteriaViewSet,
     DecisionTypeViewSet,
     EvidenceCoverageViewSet,
@@ -66,6 +67,8 @@ router.register(r"benefit-packages", BenefitPackageViewSet, basename="benefit-pa
 router.register("criteria", CriteriaViewSet, basename="criteria")
 router.register("evidence", EvidenceViewSet, basename="evidence")
 router.register("evidence-coverage", EvidenceCoverageViewSet, basename="evidence-coverage")
+router.register("criteria-rules", CriteriaRuleViewSet, basename="criteria-rules")
+
 
 
 

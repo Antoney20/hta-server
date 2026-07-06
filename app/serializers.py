@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, CriterionEvidence, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaRule,  CriterionEvidence, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -829,5 +829,30 @@ class CriterionEvidenceSerializer(serializers.ModelSerializer):
     def get_phase_name(self, obj):
         t = obj.intervention or obj.national_proposal
         return getattr(getattr(t, "phase", None), "name", None)
+
+
+class CriteriaGuideDocumentSerializer(serializers.ModelSerializer):
+    file_url = serializers.SerializerMethodField()
+
+    class Meta:
+        model = CriteriaGuideDocument
+        fields = "__all__"
+        read_only_fields = ("id", "created_at")
+
+    def get_file_url(self, obj):
+        if not obj.file:
+            return None
+        request = self.context.get("request")
+        return request.build_absolute_uri(obj.file.url) if request else obj.file.url
+
+
+class CriteriaRuleSerializer(serializers.ModelSerializer):
+    documents = CriteriaGuideDocumentSerializer(many=True, read_only=True)
+    criterion_name = serializers.CharField(source="criterion.criteria", read_only=True)
+
+    class Meta:
+        model = CriteriaRule
+        fields = "__all__"
+        read_only_fields = ("id", "created_at", "updated_at")
 
 

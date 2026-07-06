@@ -177,8 +177,6 @@ class EvidenceExtraction(models.Model):
         InterventionProposal, on_delete=models.CASCADE,
         related_name="evidence", null=True, blank=True,
     )
-    # routing block — the only fixed/specific fields; real columns so they're queryable
-    routing_decision = models.TextField(blank=True, null=True)
     routing_decision = models.TextField(blank=True, null=True)
     icd_11 = models.CharField(max_length=120, blank=True, null=True, db_index=True)
     disease_definition = models.TextField(blank=True, null=True)
@@ -534,7 +532,6 @@ class CriteriaAppraisalTool(models.Model):
     description      = models.TextField(blank=True)
     scoring_approach = models.TextField(blank=True)
     score            = models.IntegerField(null=True, blank=True)
-    #new fields added  - no issue, these are used with evidence and main panel workflows
     headers          = models.JSONField(default=list, blank=True)  
     active           = models.BooleanField(default=True)          
     created_at       = models.DateTimeField(auto_now_add=True)
@@ -964,8 +961,36 @@ class AssessmentEvidenceDocument(models.Model):
         return f"{self.file.name.split('/')[-1]} — {self.evidence_id}"
 
 
- 
+class CriteriaRule(models.Model):
+    id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    criterion     = models.ForeignKey(CriteriaAppraisalTool, on_delete=models.CASCADE, related_name="rules")
+    description   = models.TextField(blank=True)
+    kind          = models.CharField(max_length=30, default="descriptive")
+    target_fields = models.JSONField(default=list, blank=True)
+    aggregate     = models.CharField(max_length=20, blank=True)
+    items         = models.JSONField(default=list, blank=True)  
+    bands         = models.JSONField(default=list, blank=True)  
+    active        = models.BooleanField(default=True)
+    created_at    = models.DateTimeField(auto_now_add=True)
+    updated_at    = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["criterion__criteria"]
+
+    def __str__(self):
+        return f"{self.criterion.criteria} rule"
+
+class CriteriaGuideDocument(models.Model):
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    rule        = models.ForeignKey(CriteriaRule, on_delete=models.CASCADE, related_name="documents")
+    label       = models.CharField(max_length=255)
+    description = models.TextField(blank=True)
+    link        = models.TextField(blank=True)              
+    file        = models.FileField(upload_to="panel/assessment/rules/", blank=True, null=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.rule.criterion.criteria} — {self.label}"
 
  
 class BenefitPackage(models.Model):
