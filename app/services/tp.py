@@ -12,7 +12,7 @@ from app.models import (
 )
 from app.serializers import InterventionStatusUpdateSerializer
 
-CACHE_KEY = "public:topic-priority:v2"   # bumped: payload shape changed
+CACHE_KEY = "public:topic-priority:v2"   
 CACHE_TIMEOUT = 60 * 30  # 30 minutes
 
 PENDING_DECISION_NAME = "Pending"

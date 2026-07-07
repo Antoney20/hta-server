@@ -202,7 +202,7 @@ class CriteriaInformationCreateSerializer(serializers.ModelSerializer):
 class InterventionScoreCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = InterventionScore
-        fields = ["id", "intervention", "criteria", "score", "comment"]
+        fields = ["id", "intervention", "national_proposal", "criteria", "score", "comment"]
         read_only_fields = ["id"]
 
     def validate(self, attrs):
@@ -212,39 +212,59 @@ class InterventionScoreCreateSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError({
                 "score": "A score must be selected when a comment is provided."
             })
+        intervention = attrs.get("intervention")
+        national = attrs.get("national_proposal")
+        if bool(intervention) == bool(national):
+            raise serializers.ValidationError({
+                "target": "Provide exactly one of intervention or national_proposal."
+            })
         return attrs
 
 class InterventionScoreSerializer(serializers.ModelSerializer):
-    """Used for GET — enriched with reviewer + intervention details."""
+    """Used for GET — enriched with reviewer + target details."""
     reviewer_name = serializers.SerializerMethodField()
     reviewer_email = serializers.SerializerMethodField()
+    target_type = serializers.SerializerMethodField()
     intervention_name = serializers.SerializerMethodField()
     intervention_reference = serializers.SerializerMethodField()
+    package = serializers.SerializerMethodField()
+    phase = serializers.SerializerMethodField()
 
     class Meta:
         model = InterventionScore
         fields = [
             "id", "score", "comment", "created_at", "updated_at",
-            "reviewer", "intervention", "criteria",
-            "reviewer_name", "reviewer_email",
+            "reviewer", "intervention", "national_proposal", "criteria",
+            "reviewer_name", "reviewer_email", "target_type",
             "intervention_name", "intervention_reference",
+            "package", "phase",
         ]
-        read_only_fields = fields  
+        read_only_fields = fields
 
     def get_reviewer_name(self, obj) -> str:
-        return  obj.reviewer.username
+        return obj.reviewer.username
 
     def get_reviewer_email(self, obj) -> str:
         return obj.reviewer.email
 
+    def get_target_type(self, obj) -> str:
+        return "national_proposal" if obj.national_proposal_id else "intervention"
+
     def get_intervention_name(self, obj) -> str:
-        return getattr(obj.intervention, "intervention_name", str(obj.intervention))
+        t = obj.target
+        # interventions use intervention_name; nationals use title
+        return getattr(t, "intervention_name", None) or getattr(t, "title", "") or str(t)
 
     def get_intervention_reference(self, obj) -> str:
-        return getattr(obj.intervention, "reference_number", "")
+        return getattr(obj.target, "reference_number", "") or ""
 
+    def get_package(self, obj):
+        pkg = getattr(obj.target, "package", None)
+        return getattr(pkg, "name", None) if pkg else None
 
-
+    def get_phase(self, obj):
+        ph = getattr(obj.target, "phase", None)
+        return getattr(ph, "name", None) if ph else None
 
 class PublicProposalSerializer(serializers.ModelSerializer):
     date = serializers.SerializerMethodField()

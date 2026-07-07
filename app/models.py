@@ -320,23 +320,29 @@ class InterventionScore(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     reviewer = models.ForeignKey(User, on_delete=models.CASCADE)
     intervention = models.ForeignKey(
-        InterventionProposal, on_delete=models.CASCADE, related_name="scores"
+        InterventionProposal, on_delete=models.CASCADE,
+        related_name="scores", null=True, blank=True,          
+    )
+    national_proposal = models.ForeignKey(                     
+        NationalProgramProposal, on_delete=models.CASCADE,
+        related_name="scores", null=True, blank=True,
     )
     criteria = models.ForeignKey(SelectionTool, on_delete=models.CASCADE)
     score = models.JSONField(default=dict, blank=True)
     comment = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
- 
+
     is_rescored = models.BooleanField(default=False)
     rescored_by = models.ForeignKey(
-        User,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
+        User, on_delete=models.SET_NULL, null=True, blank=True,
         related_name="rescored_scores",
         help_text="The reviewer who applied the rescore.",
     )
+
+    @property
+    def target(self):
+        return self.intervention or self.national_proposal
 
     class Meta:
         unique_together = ("reviewer", "intervention", "criteria")
@@ -344,14 +350,13 @@ class InterventionScore(models.Model):
         indexes = [
             models.Index(fields=["reviewer"]),
             models.Index(fields=["intervention"]),
+            models.Index(fields=["national_proposal"]),
             models.Index(fields=["criteria"]),
             models.Index(fields=["created_at"]),
         ]
-    
+
     def __str__(self):
-        return f"{self.reviewer} — {self.intervention} — {self.criteria}"
- 
- 
+        return f"{self.reviewer} — {self.target} — {self.criteria}"
  
 class DecisionType(models.Model):
     """

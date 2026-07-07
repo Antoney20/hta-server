@@ -791,11 +791,14 @@ class InterventionScoreViewSet(viewsets.ModelViewSet):
     
     def get_queryset(self):
         qs = InterventionScore.objects.select_related(
-            "reviewer", "intervention", "criteria", "rescored_by"
+            "reviewer", "intervention", "national_proposal", "criteria", "rescored_by"
         ).filter(reviewer=self.request.user)
         intervention_id = self.request.query_params.get("intervention")
+        national_id = self.request.query_params.get("national_proposal")
         if intervention_id:
             qs = qs.filter(intervention_id=intervention_id)
+        if national_id:
+            qs = qs.filter(national_proposal_id=national_id)
         return qs
  
     def get_serializer_class(self):
