@@ -8,7 +8,7 @@ from django.utils.timezone import now
 
 from app.models import (
     DecisionType, InterventionProposal, InterventionScore,
-    InterventionStatusUpdate, InterventionSystemCategory,
+    InterventionStatusUpdate, InterventionSystemCategory, NationalProgramProposal,
 )
 from app.serializers import InterventionStatusUpdateSerializer
 
@@ -131,6 +131,27 @@ class TopicPriorityService:
         )
 
     @staticmethod
+    def _national_proposals_without_status():
+        """
+        National program proposals with NO InterventionStatusUpdate row yet.
+        Surface as id=null / Pending rows so they can be assigned a review status.
+        No score gate — national proposals aren't scored — so any proposal with a
+        reference number and no status update is included.
+        """
+        nationals_with_status = (
+            InterventionStatusUpdate.objects
+            .filter(national_proposal__isnull=False)
+            .values_list("national_proposal_id", flat=True)
+        )
+        return (
+            NationalProgramProposal.objects
+            .select_related("package", "phase")
+            .filter(reference_number__isnull=False)
+            .exclude(id__in=nationals_with_status)
+            .order_by("-created_at")
+        )
+
+    @staticmethod
     def _get_pending_decision_data() -> dict | None:
         """Single query to get the Pending sentinel for scored-only row payloads."""
         obj = (
@@ -148,12 +169,7 @@ class TopicPriorityService:
         }
 
     @staticmethod
-    def _build_payload(status_data, scored_only_interventions) -> dict:
-        """
-        Merges serialized status update rows (both target types) with scored-only
-        intervention dicts. Status update rows come first (they carry formal
-        decision data).
-        """
+    def _build_payload(status_data, scored_only_interventions, national_only_proposals) -> dict:
         pending = TopicPriorityService._get_pending_decision_data()
 
         scored_only = [
@@ -162,14 +178,14 @@ class TopicPriorityService:
                 "target_type": "intervention",
                 "reference_number": i.reference_number,
                 "intervention_id": str(i.id),
+                "national_proposal_id": None,
                 "intervention_name": i.intervention_name,
                 "decision": pending,
                 "routing_decision": None,
                 "decision_date": None,
                 "feedback": "",
                 "system_categories": [
-                    sc.system_category.name
-                    for sc in i.system_categories.all()
+                    sc.system_category.name for sc in i.system_categories.all()
                 ],
                 "package": i.package.name if i.package_id else None,
                 "phase": i.phase.name if i.phase_id else None,
@@ -181,7 +197,30 @@ class TopicPriorityService:
             for i in scored_only_interventions
         ]
 
-        results = list(status_data) + scored_only
+        national_only = [
+            {
+                "id": None,
+                "target_type": "national_proposal",
+                "reference_number": n.reference_number,
+                "intervention_id": None,
+                "national_proposal_id": str(n.id),
+                "intervention_name": n.title,   # generic name slot the FE reads
+                "decision": pending,
+                "routing_decision": None,
+                "decision_date": None,
+                "feedback": "",
+                "system_categories": [],
+                "package": n.package.name if n.package_id else None,
+                "phase": n.phase.name if n.phase_id else None,
+                "is_scored": False,
+                "move_to_panel": False,
+                "created_at": None,
+                "updated_at": None,
+            }
+            for n in national_only_proposals
+        ]
+
+        results = list(status_data) + scored_only + national_only
 
         return {
             "status": "success",
@@ -190,9 +229,12 @@ class TopicPriorityService:
             "results": results,
         }
 
+
     # ------------------------------------------------------------------ #
     #  Public read                                                         #
     # ------------------------------------------------------------------ #
+
+
 
     @classmethod
     def fetch(cls) -> dict:
@@ -204,8 +246,9 @@ class TopicPriorityService:
         serialized = InterventionStatusUpdateSerializer(status_qs, many=True).data
 
         scored_only = cls._scored_interventions_without_status()
+        national_only = cls._national_proposals_without_status()
 
-        payload = cls._build_payload(serialized, scored_only)
+        payload = cls._build_payload(serialized, scored_only, national_only)
         cache.set(CACHE_KEY, payload, CACHE_TIMEOUT)
 
         return payload
