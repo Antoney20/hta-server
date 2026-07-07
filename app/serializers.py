@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaRule,  CriterionEvidence, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -149,76 +149,56 @@ class InterventionSystemCategorySerializer(serializers.ModelSerializer):
             "created_at",
         ]
 
-
 class CriteriaInformationSerializer(serializers.ModelSerializer):
     intervention_name = serializers.CharField(
-        source="intervention.intervention_name", read_only=True
+        source="intervention.intervention_name", read_only=True, allow_null=True, default=None,
     )
     intervention_reference_number = serializers.CharField(
-        source="intervention.reference_number", read_only=True
+        source="intervention.reference_number", read_only=True, allow_null=True, default=None,
     )
-    system_category_name = serializers.SerializerMethodField()
+    national_proposal_name = serializers.CharField(
+        source="national_proposal.title", read_only=True, allow_null=True, default=None,
+    )
+    national_proposal_reference_number = serializers.CharField(
+        source="national_proposal.reference_number", read_only=True, allow_null=True, default=None,
+    )
+    target_type = serializers.SerializerMethodField()
+    package_name = serializers.SerializerMethodField()
     created_by_name = serializers.CharField(
-        source="created_by.get_username", read_only=True
+        source="created_by.get_username", read_only=True, allow_null=True, default=None,
     )
- 
+
     class Meta:
         model = CriteriaInformation
-        fields = [
-            "id",
-            "intervention",
-            "intervention_name",
-            "intervention_reference_number",
-            "system_category_name",
-            "created_by",
-            "created_by_name",
-            "brief_info",
-            "clinical_effectiveness",
-            "burden_of_disease",
-            "bod_type",
-            "population",
-            "equity",
-            "cost_effectiveness",
-            "budget_impact_affordability",
-            "feasibility_of_implementation",
-            "catastrophic_health_expenditure",
-            "access_to_healthcare",
-            "congruence_with_health_priorities",
-            "additional_info",
-            "created_at",
-            "updated_at",
+        fields = "__all__"
+        read_only_fields = [
+            "id", "created_by", "created_at", "updated_at",
         ]
- 
-    def get_system_category_name(self, obj) -> str | None:
-        """
-        Resolve the system category name via InterventionSystemCategory.
-        Returns None if no category has been assigned to the intervention.
-        """
-        isc = (
-            InterventionSystemCategory.objects
-            .select_related("system_category")
-            .filter(intervention=obj.intervention)
-            .first()
-        )
-        return isc.system_category.name if isc else None
+
+    def get_target_type(self, obj) -> str:
+        return "national_proposal" if obj.national_proposal_id else "intervention"
+
+    def get_package_name(self, obj) -> str | None:
+        target = obj.target
+        pkg = getattr(target, "package", None)
+        return getattr(pkg, "name", None) if pkg else None
+
 
 class CriteriaInformationCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = CriteriaInformation
-        fields = [
-            "intervention", 
-            "brief_info", "clinical_effectiveness",
-            "burden_of_disease", "bod_type", "population",
-            "equity", "cost_effectiveness",
-            "budget_impact_affordability",
-            "feasibility_of_implementation",
-            "catastrophic_health_expenditure",
-            "access_to_healthcare",
-            "congruence_with_health_priorities",
-            "additional_info",
-        ]
+        exclude = ["created_by", "created_at", "updated_at"]
 
-
+    def validate(self, attrs):
+        intervention = attrs.get("intervention", getattr(self.instance, "intervention", None))
+        national = attrs.get("national_proposal", getattr(self.instance, "national_proposal", None))
+        if bool(intervention) == bool(national):
+            raise serializers.ValidationError(
+                "Provide exactly one of intervention or national_proposal."
+            )
+        return attrs
+    
+    
 class InterventionScoreCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = InterventionScore
@@ -854,5 +834,63 @@ class CriteriaRuleSerializer(serializers.ModelSerializer):
         model = CriteriaRule
         fields = "__all__"
         read_only_fields = ("id", "created_at", "updated_at")
+
+
+class DecisionTemplateCriterionSerializer(serializers.ModelSerializer):
+    criterion_name = serializers.CharField(source="criterion.criteria", read_only=True)
+
+    class Meta:
+        model = DecisionTemplateCriterion
+        fields = "__all__"
+        read_only_fields = ("id", "created_at")
+
+
+class DecisionTemplateSerializer(serializers.ModelSerializer):
+    criteria          = DecisionTemplateCriterionSerializer(many=True, read_only=True)
+    kind              = serializers.SerializerMethodField()   # target kind
+    target_id         = serializers.SerializerMethodField()
+    reference_number  = serializers.SerializerMethodField()
+    target_name       = serializers.SerializerMethodField()
+    package_name      = serializers.SerializerMethodField()
+    phase_name        = serializers.SerializerMethodField()
+    generated_by_name = serializers.CharField(source="generated_by.get_full_name", read_only=True)
+
+    class Meta:
+        model = DecisionTemplate
+        fields = "__all__"
+        read_only_fields = ("id", "name", "created_at", "updated_at")
+
+    def _t(self, obj):  return obj.intervention or obj.national_proposal
+    def get_kind(self, obj):             return "intervention" if obj.intervention_id else "national_proposal"
+    def get_target_id(self, obj):        t = self._t(obj); return str(t.id) if t else None
+    def get_reference_number(self, obj): return getattr(self._t(obj), "reference_number", None)
+    def get_target_name(self, obj):
+        t = self._t(obj)
+        return getattr(t, "intervention_name", None) or getattr(t, "title", None)
+    def get_package_name(self, obj): return getattr(getattr(self._t(obj), "package", None), "name", None)
+    def get_phase_name(self, obj):   return getattr(getattr(self._t(obj), "phase", None), "name", None)
+
+
+class DecisionTemplateListSerializer(serializers.ModelSerializer):
+    kind              = serializers.SerializerMethodField()
+    reference_number  = serializers.SerializerMethodField()
+    target_name       = serializers.SerializerMethodField()
+    criteria_count    = serializers.IntegerField(source="criteria.count", read_only=True)
+    generated_by_name = serializers.CharField(source="generated_by.get_full_name", read_only=True)
+
+    class Meta:
+        model = DecisionTemplate
+        fields = ("id", "name", "title", "kind", "reference_number", "target_name",
+                  "criteria_count", "active", "generated_by", "generated_by_name",
+                  "created_at", "updated_at")
+
+    def _t(self, obj):  return obj.intervention or obj.national_proposal
+    def get_kind(self, obj):             return "intervention" if obj.intervention_id else "national_proposal"
+    def get_reference_number(self, obj): return getattr(self._t(obj), "reference_number", None)
+    def get_target_name(self, obj):
+        t = self._t(obj)
+        return getattr(t, "intervention_name", None) or getattr(t, "title", None)
+
+
 
 

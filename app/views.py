@@ -39,6 +39,7 @@ from app.services import criteria_info
 from app.services.appraisal_panel import AppraisalPanelService
 from app.services.evidence_coverage import EvidenceCoverageService as cov
 from app.services.criteria_rules import CriteriaRuleService as rules
+from app.services.final_template import  DecisionTemplateService as dt
 from app.services.benefits_package import create_package, delete_package, list_packages, update_package
 from app.services.evidence import AssessmentEvidenceService
 from app.services.phase import InterventionPhaseService
@@ -2191,3 +2192,23 @@ class CriteriaRuleViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["delete"], url_path=r"documents/(?P<doc_id>[^/.]+)")
     def delete_document(self, request, doc_id=None):
         return _respond(rules.delete_document(doc_id))
+
+
+class DecisionTemplateViewSet(viewsets.ViewSet):
+    ADMIN_ACTIONS = {"destroy"}
+    WRITE_ACTIONS = {"create"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS: return [IsAdmin()]
+        if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdmin()]
+        return [IsAuthenticated()]
+
+    def list(self, request):
+        return _respond(dt.list_templates(request.query_params, request))
+    def retrieve(self, request, pk=None):
+        return _respond(dt.get_template(pk, request))
+    def create(self, request):
+        return _respond(dt.generate(request.data, request, request.user))
+    def destroy(self, request, pk=None):
+        return _respond(dt.delete_template(pk))
+    

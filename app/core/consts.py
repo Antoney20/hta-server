@@ -8,3 +8,4 @@ def get_pending_decision():
         defaults={"description": "This is system generated, acts as a default fallback for proposals without a decision type (but proceeded to the panel for appraisal)"},
     )
     return obj.id
+

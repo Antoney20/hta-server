@@ -2,13 +2,16 @@ from django.db import models, IntegrityError, transaction
 from datetime import timedelta
 from django.core.exceptions import ValidationError
 from django.utils import timezone
+from django.db.models import Max
 # Create your models here.
 import uuid
 from django.contrib.auth import get_user_model
 from auditlog.registry import auditlog
 
-from app.core.consts import get_pending_decision
+from app.core.consts import  get_pending_decision
 from users.models import InterventionProposal
+from datetime import date
+
 
 
 User = get_user_model()
@@ -256,15 +259,7 @@ class InterventionSystemCategory(models.Model):
 
     def __str__(self):
         return f"{self.intervention} → {self.system_category}"
-
-    
-    
 class CriteriaInformation(models.Model):
-    """
-    Stores detailed qualitative information for HTA criteria
-    linked to an intervention.
-    """
-
     BURDEN_TYPE_CHOICES = [
         ("DALY", "DALY"),
         ("QALY", "QALY"),
@@ -273,22 +268,25 @@ class CriteriaInformation(models.Model):
     ]
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
     intervention = models.ForeignKey(
         InterventionProposal,
         on_delete=models.CASCADE,
-        related_name="criteria_information"
+        related_name="criteria_information",
+        null=True, blank=True,                      
+    )
+    national_proposal = models.ForeignKey(          
+        NationalProgramProposal,
+        on_delete=models.CASCADE,
+        related_name="criteria_information",
+        null=True, blank=True,
     )
 
-    created_by = models.ForeignKey(User, on_delete=models.SET_NULL,null=True, blank=True)
-    brief_info= models.TextField(null=True, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    brief_info = models.TextField(null=True, blank=True)
     clinical_effectiveness = models.TextField(null=True, blank=True)
     burden_of_disease = models.TextField(null=True, blank=True)
-    bod_type = models.CharField(
-        max_length=20,
-        choices=BURDEN_TYPE_CHOICES,
-        null=True,
-        blank=True
-    ) #will be joining with bod
+    bod_type = models.CharField(max_length=20, choices=BURDEN_TYPE_CHOICES, null=True, blank=True)
     population = models.TextField(null=True, blank=True)
     equity = models.TextField(null=True, blank=True)
     cost_effectiveness = models.TextField(null=True, blank=True)
@@ -302,15 +300,21 @@ class CriteriaInformation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    @property
+    def target(self):
+        return self.intervention or self.national_proposal
+
     class Meta:
         ordering = ["-created_at"]
         indexes = [
             models.Index(fields=["intervention"], name="idx_criteria_intervention"),
+            models.Index(fields=["national_proposal"], name="idx_criteria_national"),
         ]
+     
+      
 
     def __str__(self):
-        return f"Criteria Info — {self.intervention}"    
- 
+        return f"Criteria Info — {self.target}"
 
 class InterventionScore(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -991,6 +995,81 @@ class CriteriaGuideDocument(models.Model):
 
     def __str__(self):
         return f"{self.rule.criterion.criteria} — {self.label}"
+
+
+
+class DecisionTemplate(models.Model):
+    id                = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name              = models.CharField(max_length=255, editable=False)
+    title             = models.CharField(max_length=300, blank=True)
+    description       = models.TextField(blank=True)
+
+    intervention      = models.ForeignKey(InterventionProposal, null=True, blank=True,
+                                          on_delete=models.CASCADE, related_name="decision_templates")
+    national_proposal = models.ForeignKey(NationalProgramProposal, null=True, blank=True,
+                                          on_delete=models.CASCADE, related_name="decision_templates")
+
+    generated_by      = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True,
+                                          related_name="decision_templates")
+    active            = models.BooleanField(default=True)
+    created_at        = models.DateTimeField(auto_now_add=True)
+    updated_at        = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    @property
+    def target(self):
+        return self.intervention or self.national_proposal
+
+    def __str__(self):
+        return self.name
+
+    @staticmethod
+    def _next_ref():
+        prefix = f"DEC-{date.today():%Y-%m}"
+        last = (
+            DecisionTemplate.objects
+            .filter(name__startswith=prefix)
+            .aggregate(m=Max("name"))["m"]
+        )
+        seq = int(last.split("-")[-1]) + 1 if last else 1
+        return f"{prefix}-{seq:04d}"
+
+    def save(self, *args, **kwargs):
+        if not self.name:
+            with transaction.atomic():
+                prefix = f"TT-{date.today():%Y-%m}"
+                list(
+                    DecisionTemplate.objects
+                    .select_for_update()
+                    .filter(name__startswith=prefix)
+                    .values_list("id", flat=True)
+                )
+                self.name = self._next_ref()
+                super().save(*args, **kwargs)
+        else:
+            super().save(*args, **kwargs)
+
+class DecisionTemplateCriterion(models.Model):
+    """One row per criterion on the worksheet — type, decision fields, and selected bands."""
+    id            = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    template      = models.ForeignKey(DecisionTemplate, on_delete=models.CASCADE, related_name="criteria")
+
+    criterion     = models.ForeignKey(CriteriaAppraisalTool, on_delete=models.PROTECT, related_name="+")
+    rule          = models.ForeignKey(CriteriaRule, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    kind          = models.CharField(max_length=30, blank=True)   
+    target_fields = models.JSONField(default=list, blank=True)        
+    selected_bands = models.JSONField(default=list, blank=True)       
+    score          = models.IntegerField(null=True, blank=True)
+
+    created_at    = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["criterion__criteria"]
+
+    def __str__(self):
+        return f"{self.template.name} — {self.criterion.criteria}"
 
  
 class BenefitPackage(models.Model):

@@ -11,6 +11,7 @@ from .views import (
     CriteriaInformationViewSet,
     CriteriaRuleViewSet,
     CriteriaViewSet,
+    DecisionTemplateViewSet,
     DecisionTypeViewSet,
     EvidenceCoverageViewSet,
     EvidenceCriterionViewSet,
@@ -68,6 +69,7 @@ router.register("criteria", CriteriaViewSet, basename="criteria")
 router.register("evidence", EvidenceViewSet, basename="evidence")
 router.register("evidence-coverage", EvidenceCoverageViewSet, basename="evidence-coverage")
 router.register("criteria-rules", CriteriaRuleViewSet, basename="criteria-rules")
+router.register("decision-templates", DecisionTemplateViewSet, basename="decision-templates")
 
 
 
