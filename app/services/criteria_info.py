@@ -4,49 +4,52 @@ from app.models import CriteriaInformation
 CACHE_TTL = 60 * 15
 
 
-def _cache_key(intervention_id: str) -> str:
-    return f"criteria_info:{intervention_id}"
+def _cache_key(target_type: str, target_id: str) -> str:
+    return f"criteria_info:{target_type}:{target_id}"
 
 
-def _fetch_from_db(intervention_id: str) -> list:
+def _target_of(obj: CriteriaInformation) -> tuple[str, str] | None:
+    if obj.intervention_id:
+        return ("intervention", str(obj.intervention_id))
+    if obj.national_proposal_id:
+        return ("national_proposal", str(obj.national_proposal_id))
+    return None
+
+
+def _fetch_from_db(target_type: str, target_id: str) -> list:
+    field = "intervention_id" if target_type == "intervention" else "national_proposal_id"
     qs = (
         CriteriaInformation.objects
-        .filter(intervention_id=intervention_id)
-        .select_related("intervention",  "created_by")
-        .only(
-            "id", "brief_info", "clinical_effectiveness",
-            "burden_of_disease", "bod_type", "population",
-            "equity", "cost_effectiveness",
-            "budget_impact_affordability",
-            "feasibility_of_implementation",
-            "catastrophic_health_expenditure",
-            "access_to_healthcare",
-            "congruence_with_health_priorities",
-            "additional_info", "created_at", "updated_at",
-            "intervention__id", "intervention__name",
-            "created_by__id", "created_by__first_name", "created_by__last_name",
-        )
+        .filter(**{field: target_id})
+        .select_related("intervention", "national_proposal", "created_by")
     )
-    return list(qs)  
+    return list(qs)
 
 
-def get_criteria_for_intervention(intervention_id: str) -> list:
-    key = _cache_key(intervention_id)
+def get_criteria_for_target(target_type: str, target_id: str) -> list:
+    key = _cache_key(target_type, target_id)
     cached = cache.get(key)
     if cached is not None:
         return cached
-    result = _fetch_from_db(intervention_id)
+    result = _fetch_from_db(target_type, target_id)
     cache.set(key, result, CACHE_TTL)
     return result
 
 
-def _invalidate(intervention_id: str) -> None:
-    cache.delete(_cache_key(str(intervention_id)))
+# Back-compat shim — intervention-only callers
+def get_criteria_for_intervention(intervention_id: str) -> list:
+    return get_criteria_for_target("intervention", intervention_id)
+
+
+def _invalidate(obj: CriteriaInformation) -> None:
+    target = _target_of(obj)
+    if target:
+        cache.delete(_cache_key(*target))
 
 
 def create_criteria(validated_data: dict, user) -> CriteriaInformation:
     obj = CriteriaInformation.objects.create(created_by=user, **validated_data)
-    _invalidate(validated_data["intervention"].id)
+    _invalidate(obj)
     return obj
 
 
@@ -54,5 +57,5 @@ def update_criteria(instance: CriteriaInformation, validated_data: dict) -> Crit
     for attr, value in validated_data.items():
         setattr(instance, attr, value)
     instance.save(update_fields=list(validated_data.keys()) + ["updated_at"])
-    _invalidate(instance.intervention_id)
+    _invalidate(instance)
     return instance
