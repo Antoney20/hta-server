@@ -6,19 +6,19 @@ import logging
 import numpy as np
 
 from django.contrib.auth import get_user_model
+from django.db.models import Q
+
 from users.models import InterventionProposal
-from app.models import InterventionScore, SelectionTool
+from app.models import InterventionScore, SelectionTool, NationalProgramProposal
 
 User = get_user_model()
 logger = logging.getLogger(__name__)
 
-# ── Score scale constants 
+# ── Score scale constants
 
 SCORE_MIN = 1   # worst possible score a reviewer can give
 SCORE_MAX = 3   # best possible score a reviewer can give
 
-
-# ── Dataclasses ───────────────────────────────────────────────────────────────
 
 @dataclass
 class CriteriaAnchor:
@@ -30,21 +30,21 @@ class CriteriaAnchor:
 @dataclass
 class NormalisedScore:
     criteria_name: str
-    normalised_value: Optional[float]   # None if reviewer did not score this cell
+    normalised_value: Optional[float]  
 
 
 @dataclass
 class InterventionNormalised:
     intervention_id: str
     intervention_name: str
-    intervention_reference: Optional[str] 
+    intervention_reference: Optional[str]
     normalised: list[NormalisedScore] = field(default_factory=list)
 
 
 @dataclass
 class CriteriaStdDev:
     criteria_name: str
-    std_dev: float   # population SD (sigma) of normalised values across interventions
+    std_dev: float  
 
 
 @dataclass
@@ -122,25 +122,6 @@ class CriteriaWeightedScore:
     weighted_score: float
 
 
-# @dataclass
-# class ReviewerInterventionScore:
-#     """
-#     One reviewer × one intervention.
-
-#     criteria_scores  = list of per-criteria (raw_score * weight) detail
-#     total_score      = sum of weighted_scores across all scored criteria
-#                        (used for individual ranking)
-#     """
-#     reviewer_id: str
-#     reviewer_email: Optional[str]
-#     reviewer_username: Optional[str]
-#     intervention_id: str
-#     intervention_name: str
-#     # criteria_scores: list[CriteriaWeightedScore] = field(default_factory=list)
-#     weighted_criteria: dict[str, float] = field(default_factory=dict)
-#     total_score: float = 0.0
-
-
 @dataclass
 class ReviewerInterventionScore:
     reviewer_id: str
@@ -148,8 +129,8 @@ class ReviewerInterventionScore:
     reviewer_username: Optional[str]
     intervention_id: str
     intervention_name: str
-    intervention_reference: Optional[str]  
-    weighted_criteria: dict[str, float] = field(default_factory=dict)  
+    intervention_reference: Optional[str]
+    weighted_criteria: dict[str, float] = field(default_factory=dict)
     total_score: float = 0.0
 
 
@@ -170,7 +151,7 @@ class ReviewerInterventionRank:
     rank: int
     intervention_id: str
     intervention_name: str
-    intervention_reference: Optional[str] 
+    intervention_reference: Optional[str]
     total_score: float
 
 
@@ -185,7 +166,7 @@ class InterventionAggregateScore:
     """
     intervention_id: str
     intervention_name: str
-    intervention_reference: Optional[str] 
+    intervention_reference: Optional[str]
     reviewer_count: int = 0
     package: Optional[str] = None
     phase: Optional[str] = None
@@ -201,9 +182,10 @@ class AggregateRankingEntry:
     rank: int
     intervention_id: str
     intervention_name: str
-    intervention_reference: Optional[str] 
+    intervention_reference: Optional[str]
     reviewer_count: int
     value: float
+
 
 # ── Top-level report ──────────────────────────────────────────────────────────
 @dataclass
@@ -224,26 +206,29 @@ class WeightingReport:
     error: Optional[str] = None
 
 
-
 # ── Data loading ──────────────────────────────────────────────────────────────
 
 def _load_score_index(
-    interventions,
+    target_ids: list[str],
 ) -> dict[str, dict[str, dict[str, int]]]:
     """
     Returns:
-        { reviewer_id (UUID str): { intervention_id: { criteria_name: score_value } } }
+        { reviewer_id (UUID str): { target_id: { criteria_name: score_value } } }
 
-    Only interventions where the reviewer actually provided a non-zero score are
-    included. Interventions with no scores from a reviewer are simply absent from
-    that reviewer's dict — they are never stored as all-None rows.
+    Matches scores by EITHER FK (intervention or national_proposal) and coalesces
+    to a single target id, so intervention and national-program scores flow through
+    the identical pipeline. Only interventions where the reviewer actually provided
+    a non-zero score are included — never stored as all-None rows.
     """
     index: dict[str, dict[str, dict[str, int]]] = {}
 
     qs = (
         InterventionScore.objects
         .select_related("criteria")
-        .filter(intervention__in=interventions)
+        .filter(
+            Q(intervention_id__in=target_ids)
+            | Q(national_proposal_id__in=target_ids)
+        )
     )
 
     for s in qs:
@@ -256,7 +241,7 @@ def _load_score_index(
             continue
 
         r_id  = str(s.reviewer_id)
-        iv_id = str(s.intervention_id)
+        iv_id = str(s.intervention_id or s.national_proposal_id)   # coalesce to target id
         cname = s.criteria.criteria.strip()
 
         index.setdefault(r_id, {}).setdefault(iv_id, {})[cname] = value
@@ -303,7 +288,7 @@ def _normalise_value(score: int, worst: float, best: float) -> float:
 
 def _build_normalisation(
     reviewer_scores: dict[str, dict[str, int]],
-    intervention_meta: dict[str, tuple[str, str]],
+    intervention_meta: dict[str, tuple[str, str, Optional[str], Optional[str]]],
     criteria_names: list[str],
     anchors: list[CriteriaAnchor],
     scored_intervention_ids: list[str],   # only interventions this reviewer scored
@@ -317,7 +302,7 @@ def _build_normalisation(
     anchor_map = {a.criteria_name: a for a in anchors}
     rows = []
     for iv_id in scored_intervention_ids:
-        _ref,iv_ref,  iv_name, _pkg, _phase = intervention_meta[iv_id]
+        iv_ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
         iv_scores = reviewer_scores.get(iv_id, {})
         normalised = []
         for cname in criteria_names:
@@ -351,7 +336,7 @@ def _build_std_devs(
             for ns in iv.normalised
             if ns.criteria_name == cname and ns.normalised_value is not None
         ]
-        std_dev = round(float(np.std(values)), 9) if len(values) >= 2 else 0.0
+        std_dev = round(float(np.std(values)), 4) if len(values) >= 2 else 0.0
         std_devs.append(CriteriaStdDev(criteria_name=cname, std_dev=std_dev))
     return std_devs
 
@@ -450,7 +435,7 @@ def _build_weightings(
 def _run_critic_for_reviewer(
     reviewer_id: str,
     reviewer_scores: dict[str, dict[str, int]],
-    intervention_meta: dict[str, tuple[str, str]],
+    intervention_meta: dict[str, tuple[str, str, Optional[str], Optional[str]]],
     criteria_names: list[str],
 ) -> ReviewerWeightingResult:
     """
@@ -498,7 +483,7 @@ def _run_critic_for_reviewer(
 def _build_reviewer_scores(
     reviewer_results: list[ReviewerWeightingResult],
     score_index: dict[str, dict[str, dict[str, int]]],
-    intervention_meta: dict[str, tuple[str, str]],
+    intervention_meta: dict[str, tuple[str, str, Optional[str], Optional[str]]],
     criteria_names: list[str],
 ) -> list[ReviewerInterventionScore]:
     """
@@ -515,7 +500,7 @@ def _build_reviewer_scores(
         reviewer_iv_scores = score_index.get(rr.reviewer_id, {})
 
         for iv_id, iv_scores in reviewer_iv_scores.items():
-            _ref, iv_ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
+            iv_ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
 
             criteria_scores: list[CriteriaWeightedScore] = []
             for cname in criteria_names:
@@ -545,8 +530,8 @@ def _build_reviewer_scores(
                 reviewer_username = rr.reviewer_username,
                 intervention_id   = iv_id,
                 intervention_name = iv_name,
-                intervention_reference = iv_ref, 
-                weighted_criteria = weighted_criteria,  # ← correct field
+                intervention_reference = iv_ref,
+                weighted_criteria = weighted_criteria,
                 total_score       = total,
             ))
 
@@ -573,7 +558,7 @@ def _build_reviewer_rankings(
                 rank              = idx + 1,
                 intervention_id   = r.intervention_id,
                 intervention_name = r.intervention_name,
-                intervention_reference = r.intervention_reference, 
+                intervention_reference = r.intervention_reference,
                 total_score       = r.total_score,
             )
             for idx, r in enumerate(sorted_rows)
@@ -588,10 +573,9 @@ def _build_reviewer_rankings(
     return rankings
 
 
-
 def _build_average_scores(
     reviewer_score_rows: list[ReviewerInterventionScore],
-    intervention_meta: dict[str, tuple[str, str]],
+    intervention_meta: dict[str, tuple[str, str, Optional[str], Optional[str]]],
     criteria_names: list[str],
 ) -> tuple[list[InterventionAggregateScore], list[AggregateRankingEntry]]:
     """
@@ -618,28 +602,8 @@ def _build_average_scores(
         totals_accum.setdefault(row.intervention_id, []).append(row.total_score)
 
     average_scores: list[InterventionAggregateScore] = []
-    # for iv_id, criteria_lists in criteria_accum.items():
-    #     _ref, iv_name = intervention_meta[iv_id]
-    #     reviewer_totals = totals_accum.get(iv_id, [])
-    #     reviewer_count = len(reviewer_totals)
-
-    #     averaged_criteria: dict[str, float] = {}
-    #     for cname in criteria_names:
-    #         vals = criteria_lists.get(cname, [])
-    #         averaged_criteria[cname] = round(sum(vals) / len(vals), 4) if vals else 0.0
-
-    #     average_value_score = round(sum(reviewer_totals) / reviewer_count, 4) if reviewer_count else 0.0
-
-    #     average_scores.append(InterventionAggregateScore(
-    #         intervention_id     = iv_id,
-    #         intervention_name   = iv_name,
-    #         reviewer_count      = reviewer_count,
-    #         averaged_criteria   = averaged_criteria,
-    #         average_value_score = average_value_score,
-    #     ))
-    
     for iv_id, criteria_lists in criteria_accum.items():
-        _ref, iv_ref, iv_name, pkg, phase = intervention_meta[iv_id]
+        iv_ref, iv_name, pkg, phase = intervention_meta[iv_id]
         reviewer_totals = totals_accum.get(iv_id, [])
         reviewer_count = len(reviewer_totals)
 
@@ -653,7 +617,7 @@ def _build_average_scores(
         average_scores.append(InterventionAggregateScore(
             intervention_id     = iv_id,
             intervention_name   = iv_name,
-            intervention_reference = iv_ref,  
+            intervention_reference = iv_ref,
             package             = pkg,
             phase               = phase,
             reviewer_count      = reviewer_count,
@@ -684,43 +648,52 @@ class WeightingReportService:
     @staticmethod
     def generate(intervention_ids: list[str] | None = None) -> WeightingReport:
         try:
-            qs = InterventionProposal.objects.select_related("package", "phase").order_by("reference_number")
+            # Load BOTH target types into one meta map keyed by id.
+            iv_qs = (
+                InterventionProposal.objects
+                .select_related("package", "phase")
+                .order_by("reference_number")
+            )
+            np_qs = (
+                NationalProgramProposal.objects
+                .select_related("package", "phase")
+                .order_by("reference_number")
+            )
             if intervention_ids:
-                qs = qs.filter(id__in=intervention_ids)
-            interventions = list(qs)
+                iv_qs = iv_qs.filter(id__in=intervention_ids)
+                np_qs = np_qs.filter(id__in=intervention_ids)
 
             criteria_names: list[str] = list(
                 SelectionTool.objects.values_list("criteria", flat=True)
                 .distinct().order_by("criteria")
             )
 
-            # { reviewer_id: { intervention_id: { criteria_name: score } } }
-            # Only non-zero, actually-scored entries are present.
-            score_index = _load_score_index(interventions)
+            # meta tuple: (reference_number, name, package, phase)
+            intervention_meta: dict[str, tuple[str, str, Optional[str], Optional[str]]] = {}
+            for iv in iv_qs:
+                intervention_meta[str(iv.id)] = (
+                    iv.reference_number or str(iv.id),
+                    iv.intervention_name or str(iv),
+                    iv.package.name if iv.package_id else None,
+                    iv.phase.name if iv.phase_id else None,
+                )
+            for np in np_qs:
+                intervention_meta[str(np.id)] = (
+                    np.reference_number or str(np.id),
+                    np.title or str(np),
+                    np.package.name if np.package_id else None,
+                    np.phase.name if np.phase_id else None,
+                )
+
+            # { reviewer_id: { target_id: { criteria_name: score } } }
+            # Loaded by EITHER FK, so intervention + national scores both flow in.
+            score_index = _load_score_index(list(intervention_meta.keys()))
 
             if not score_index:
                 return WeightingReport(
                     success=False,
-                    message="No scores found for the selected interventions.",
+                    message="No scores found for the selected proposals.",
                 )
-
-            # intervention_meta: dict[str, tuple[str, str]] = {
-            #     str(iv.id): (
-            #         getattr(iv, "reference_number", str(iv.id)),
-            #         getattr(iv, "intervention_name", str(iv)),
-            #     )
-            #     for iv in interventions
-            # }
-            intervention_meta: dict[str, tuple[str, str, Optional[str], Optional[str]]] = {
-                str(iv.id): (
-                    getattr(iv, "reference_number", str(iv.id)),
-                    getattr(iv, "intervention_name", str(iv)),
-                    iv.reference_number or str(iv.id), 
-                    iv.package.name if iv.package_id else None,
-                    iv.phase.name if iv.phase_id else None,
-                )
-                for iv in interventions
-            }
 
             # ── 1. CRITIC — per reviewer, using only interventions they scored ─
             reviewer_results: list[ReviewerWeightingResult] = [
@@ -744,7 +717,7 @@ class WeightingReportService:
             # ── 3. Individual rankings — per reviewer, by total_score ──────────
             reviewer_rankings = _build_reviewer_rankings(reviewer_score_rows)
 
-
+            # ── 4. Aggregate — averaged across reviewers per intervention ──────
             average_scores, average_ranking = _build_average_scores(
                 reviewer_score_rows = reviewer_score_rows,
                 intervention_meta   = intervention_meta,
@@ -757,10 +730,9 @@ class WeightingReportService:
                 reviewer_results   = reviewer_results,
                 reviewer_scores    = reviewer_score_rows,
                 reviewer_rankings  = reviewer_rankings,
-                average_scores   = average_scores,
-                average_ranking  = average_ranking,
+                average_scores     = average_scores,
+                average_ranking    = average_ranking,
             )
-     
 
         except Exception as exc:
             logger.exception("WeightingReportService.generate failed")

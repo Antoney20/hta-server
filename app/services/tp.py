@@ -1,6 +1,6 @@
 from django.core.cache import cache
 from django.db.models import (
-    BooleanField, Count, ExpressionWrapper,
+    BooleanField, Count, ExpressionWrapper, F,
     IntegerField, OuterRef, Prefetch, Q, Subquery, Value,
 )
 from django.db.models.functions import Coalesce
@@ -12,7 +12,7 @@ from app.models import (
 )
 from app.serializers import InterventionStatusUpdateSerializer
 
-CACHE_KEY = "public:topic-priority:v2"   
+CACHE_KEY = "public:topic-priority:v2"
 CACHE_TIMEOUT = 60 * 30  # 30 minutes
 
 PENDING_DECISION_NAME = "Pending"
@@ -42,12 +42,14 @@ class TopicPriorityService:
     Response shape (each result row):
     - Status update rows (with decision/status), for either target type
     - Interventions with >1 score and no status update yet (id=null rows)
-    - is_scored: always bool, never null
+    - National proposals with >1 score and no status update yet (id=null rows)
+    - is_scored: always bool, never null — true for either target type once it has
+      more than one InterventionScore row
     - move_to_panel: always bool
     - decision: always set — 'Pending' sentinel for rows without a formal decision
 
-    Scored-only logic is intervention-only: national program proposals are not
-    scored via InterventionScore, so they never appear as scored-only rows.
+    InterventionScore carries nullable FKs to BOTH InterventionProposal and
+    NationalProgramProposal, so scoring is judged per target type and summed.
     """
 
     @staticmethod
@@ -60,13 +62,25 @@ class TopicPriorityService:
             .values("cnt")[:1]
         )
 
+    @staticmethod
+    def _national_score_count_subquery():
+        return (
+            InterventionScore.objects
+            .filter(national_proposal=OuterRef("national_proposal_id"))
+            .values("national_proposal")
+            .annotate(cnt=Count("id"))
+            .values("cnt")[:1]
+        )
+
     @classmethod
     def _status_update_queryset(cls):
         """
         All InterventionStatusUpdate rows (both target types) annotated with
-        is_scored. For national-proposal rows intervention_id is null, so the
-        score subquery matches nothing and is_scored is False — correct, since
-        national proposals aren't scored through InterventionScore.
+        is_scored. Rows are XOR: an intervention row has national_proposal_id null
+        (national subquery matches nothing → 0) and a national row has
+        intervention_id null (intervention subquery matches nothing → 0), so the two
+        counts never overlap and summing them is safe. is_scored fires when EITHER
+        target has more than one score.
         """
         return (
             InterventionStatusUpdate.objects
@@ -85,7 +99,7 @@ class TopicPriorityService:
                 )
             )
             .annotate(
-                score_count=Coalesce(
+                _int_score_count=Coalesce(
                     Subquery(
                         cls._score_count_subquery(),
                         output_field=IntegerField(),
@@ -93,8 +107,19 @@ class TopicPriorityService:
                     Value(0),
                     output_field=IntegerField(),
                 ),
+                _nat_score_count=Coalesce(
+                    Subquery(
+                        cls._national_score_count_subquery(),
+                        output_field=IntegerField(),
+                    ),
+                    Value(0),
+                    output_field=IntegerField(),
+                ),
+            )
+            .annotate(
+                score_count=F("_int_score_count") + F("_nat_score_count"),
                 is_scored=ExpressionWrapper(
-                    Q(score_count__gt=1),
+                    Q(_int_score_count__gt=1) | Q(_nat_score_count__gt=1),
                     output_field=BooleanField(),
                 ),
             )
@@ -106,7 +131,6 @@ class TopicPriorityService:
         """
         Interventions with >1 score that have NO InterventionStatusUpdate row at all.
         These surface as id=null / Pending rows in the response.
-        National proposals are excluded by design (no InterventionScore).
         """
         interventions_with_status = (
             InterventionStatusUpdate.objects
@@ -135,8 +159,8 @@ class TopicPriorityService:
         """
         National program proposals with NO InterventionStatusUpdate row yet.
         Surface as id=null / Pending rows so they can be assigned a review status.
-        No score gate — national proposals aren't scored — so any proposal with a
-        reference number and no status update is included.
+        Every proposal with a reference number and no status update is included; the
+        real score count is annotated so is_scored is reported correctly per row.
         """
         nationals_with_status = (
             InterventionStatusUpdate.objects
@@ -148,6 +172,7 @@ class TopicPriorityService:
             .select_related("package", "phase")
             .filter(reference_number__isnull=False)
             .exclude(id__in=nationals_with_status)
+            .annotate(score_count=Count("scores"))
             .order_by("-created_at")
         )
 
@@ -212,7 +237,7 @@ class TopicPriorityService:
                 "system_categories": [],
                 "package": n.package.name if n.package_id else None,
                 "phase": n.phase.name if n.phase_id else None,
-                "is_scored": False,
+                "is_scored": n.score_count > 1,
                 "move_to_panel": False,
                 "created_at": None,
                 "updated_at": None,
@@ -229,12 +254,9 @@ class TopicPriorityService:
             "results": results,
         }
 
-
     # ------------------------------------------------------------------ #
     #  Public read                                                         #
     # ------------------------------------------------------------------ #
-
-
 
     @classmethod
     def fetch(cls) -> dict:
