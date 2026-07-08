@@ -1,6 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 import re
+import os
+import unicodedata
 
 from app.core.input_validation import contains_attack, sanitize_text
 from users.utils.sanitize import sanitize_email, sanitize_html
@@ -361,28 +363,55 @@ def _mask(value: str) -> str:
 
 MASKED_FIELDS = ["name", "phone", "email", "county", "signature"]
 
+# SAFE_TEXT_FIELDS = [
+#     "name",
+#     "profession",
+#     "organization",
+#     "county",
+#     "intervention_name",
+#     "intervention_type",
+#     "signature",
+# ]
+
+# RICH_TEXT_FIELDS = {"beneficiary", "justification", "expected_impact", "additional_info"}
+
+
+
+# ALLOWED_FILE_TYPES = [".pdf", ".xlsx", ".docx"]
+# MAX_FILE_SIZE_MB = 10
+
 # class InterventionProposalSerializer(serializers.ModelSerializer):
+
 #     uploaded_documents = serializers.ListField(
 #         child=serializers.FileField(max_length=255, allow_empty_file=False),
 #         write_only=True,
 #         required=False
 #     )
+
 #     uploadedDocument = serializers.FileField(
-#         max_length=255, allow_empty_file=False, write_only=True, required=False
+#         max_length=255,
+#         allow_empty_file=False,
+#         write_only=True,
+#         required=False
 #     )
+
 #     interventionName = serializers.CharField(
 #         source='intervention_name',
 #         required=False,
 #         allow_blank=True,
 #         allow_null=True
 #     )
+
 #     interventionType = serializers.CharField(
 #         source='intervention_type',
 #         required=False,
 #         allow_blank=True,
 #         allow_null=True
 #     )
+
 #     documents = ProposalDocumentSerializer(many=True, read_only=True)
+#     package_name = serializers.CharField(source="package.name", read_only=True)
+#     phase_name = serializers.CharField(source="phase.name", read_only=True)
 
 #     class Meta:
 #         model = InterventionProposal
@@ -390,34 +419,112 @@ MASKED_FIELDS = ["name", "phone", "email", "county", "signature"]
 #             'id',
 #             'name', 'phone', 'email', 'profession', 'organization', 'county',
 #             'intervention_name', 'intervention_type', 'beneficiary',
-#             'justification', 'expected_impact', 'additional_info', 'reference_number',
-#             'signature', 'date', 'uploaded_documents', 'uploadedDocument', 'is_public',
-#             'interventionName', 'interventionType', 'rescore_open',
+#             'justification', 'expected_impact', 'additional_info',
+#             'reference_number',
+#             'package_name', 'phase_name',
+#             'signature', 'date',
+#             'uploaded_documents', 'uploadedDocument',
+#             'is_public',
+#             'interventionName', 'interventionType',
+#             'rescore_open',
 #             'documents'
 #         ]
-#         read_only_fields = ['id', 'reference_number','rescore_open', 'documents']
+
+#         read_only_fields = ['id', 'reference_number', 'rescore_open', 'documents']
+
+
+#     def validate_name(self, value):
+#         value = sanitize_text(value)
+
+#         if not re.match(r"^[A-Za-z\s\-\.'’]{2,100}$", value):
+#             raise serializers.ValidationError("Invalid name.")
+
+#         return value
+
+#     def validate_phone(self, value):
+#         value = sanitize_text(value)
+
+#         if not re.match(r"^\+?[0-9]{7,15}$", value):
+#             raise serializers.ValidationError("Invalid phone number.")
+
+#         return value
+
+#     def validate_email(self, value):
+#         if value:
+#             return value.lower().strip()
+#         return value
+    
+#     def validate_uploaded_documents(self, files):
+#         for file in files:
+#             self._validate_file(file)
+#         return files
+
+#     def validate_uploadedDocument(self, file):
+#         self._validate_file(file)
+#         return file
+
+
+
+#     def _validate_file(self, file):
+#         if file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
+#             raise serializers.ValidationError("File too large (max 10MB).")
+
+#         ext = "." + file.name.lower().rsplit(".", 1)[-1]
+#         if ext not in ALLOWED_FILE_TYPES:
+#             raise serializers.ValidationError("Unsupported file type. Allowed: PDF, XLSX, DOCX.")
+
+
+#         file.name = sanitize_text(file.name)
+
+#     def validate(self, attrs):
+#         for field in SAFE_TEXT_FIELDS:
+#             if field in attrs and attrs[field]:
+#                 cleaned = sanitize_text(attrs[field])
+#                 if contains_attack(cleaned):
+#                     raise serializers.ValidationError({field: "Suspicious input detected."})
+#                 attrs[field] = cleaned
+
+#         for field in RICH_TEXT_FIELDS:
+#             if field in attrs and attrs[field]:
+#                 cleaned = sanitize_html(attrs[field])
+#                 if contains_attack(strip_tags(cleaned)):  # check visible text, store HTML
+#                     raise serializers.ValidationError({field: "Suspicious input detected."})
+#                 attrs[field] = cleaned
+
+#         return attrs
+
 
 #     def to_representation(self, instance):
 #         data = super().to_representation(instance)
+
 #         for field in MASKED_FIELDS:
 #             if field in data and data[field]:
 #                 data[field] = _mask(str(data[field]))
+
 #         return data
 
+
 #     def create(self, validated_data):
+
+#         request = self.context.get("request")
+
 #         validated_data.pop('interventionName', None)
 #         validated_data.pop('interventionType', None)
 
 #         uploaded_documents = validated_data.pop('uploaded_documents', [])
 #         uploaded_document = validated_data.pop('uploadedDocument', None)
+        
 
 #         if uploaded_document:
 #             uploaded_documents.append(uploaded_document)
 
+#         if request:
+#             validated_data["ip_address"] = self._get_client_ip(request)
+#             validated_data["user_agent"] = request.META.get("HTTP_USER_AGENT", "")[:500]
+
 #         proposal = InterventionProposal.objects.create(**validated_data)
 
 #         for document in uploaded_documents:
-#             logger.info(f"Saving document: {document.name}")
 #             ProposalDocument.objects.create(
 #                 proposal=proposal,
 #                 document=document,
@@ -425,8 +532,17 @@ MASKED_FIELDS = ["name", "phone", "email", "county", "signature"]
 #                 is_public=proposal.is_public
 #             )
 
-#         logger.info(f"Proposal {proposal.id} created with {proposal.documents.count()} documents")
+#         logger.info(
+#             f"Proposal {proposal.id} created with {proposal.documents.count()} documents"
+#         )
+
 #         return proposal
+
+#     def _get_client_ip(self, request):
+#         x_forwarded_for = request.META.get("HTTP_X_FORWARDED_FOR")
+#         if x_forwarded_for:
+#             return x_forwarded_for.split(",")[0].strip()
+#         return request.META.get("REMOTE_ADDR")
 
 SAFE_TEXT_FIELDS = [
     "name",
@@ -440,10 +556,33 @@ SAFE_TEXT_FIELDS = [
 
 RICH_TEXT_FIELDS = {"beneficiary", "justification", "expected_impact", "additional_info"}
 
-
-
 ALLOWED_FILE_TYPES = [".pdf", ".xlsx", ".docx"]
 MAX_FILE_SIZE_MB = 10
+
+valid_mimes = {
+    ".pdf":  "application/pdf",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
+
+
+def safe_filename(raw: str, fallback: str = "upload") -> str:
+    """
+    Reduce an uploaded filename to a safe basename:
+    - drops any directory components (path traversal)
+    - normalizes unicode, strips control chars
+    - allows only [A-Za-z0-9 . _ -], collapses the rest to '_'
+    - guarantees a non-empty stem and a single extension
+    """
+    name = os.path.basename(str(raw or "")).replace("\\", "/").split("/")[-1]
+    name = unicodedata.normalize("NFKC", name)
+    name = "".join(ch for ch in name if ch.isprintable() and ord(ch) >= 32)
+    stem, ext = os.path.splitext(name)
+    stem = re.sub(r"[^A-Za-z0-9._-]", "_", stem).strip("._-") or fallback
+    ext = re.sub(r"[^A-Za-z0-9]", "", ext.lower())
+    ext = f".{ext}" if ext else ""
+    return f"{stem[:120]}{ext}"
+
 
 class InterventionProposalSerializer(serializers.ModelSerializer):
 
@@ -497,28 +636,23 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
 
         read_only_fields = ['id', 'reference_number', 'rescore_open', 'documents']
 
-
     def validate_name(self, value):
         value = sanitize_text(value)
-
         if not re.match(r"^[A-Za-z\s\-\.'’]{2,100}$", value):
             raise serializers.ValidationError("Invalid name.")
-
         return value
 
     def validate_phone(self, value):
         value = sanitize_text(value)
-
         if not re.match(r"^\+?[0-9]{7,15}$", value):
             raise serializers.ValidationError("Invalid phone number.")
-
         return value
 
     def validate_email(self, value):
         if value:
             return value.lower().strip()
         return value
-    
+
     def validate_uploaded_documents(self, files):
         for file in files:
             self._validate_file(file)
@@ -528,18 +662,29 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
         self._validate_file(file)
         return file
 
-
-
     def _validate_file(self, file):
+        # size
         if file.size > MAX_FILE_SIZE_MB * 1024 * 1024:
             raise serializers.ValidationError("File too large (max 10MB).")
 
-        ext = "." + file.name.lower().rsplit(".", 1)[-1]
+        # extension (claimed type)
+        original = file.name or ""
+        ext = os.path.splitext(original.lower())[1]
         if ext not in ALLOWED_FILE_TYPES:
-            raise serializers.ValidationError("Unsupported file type. Allowed: PDF, XLSX, DOCX.")
+            raise serializers.ValidationError(
+                "Unsupported file type. Allowed: PDF, XLSX, DOCX."
+            )
 
+        # declared MIME (client-supplied) must agree with the extension, when present
+        declared = getattr(file, "content_type", None)
+        if declared and declared != valid_mimes[ext]:
+            raise serializers.ValidationError(
+                "File MIME type does not match its extension."
+            )
 
-        file.name = sanitize_text(file.name)
+        # never trust the client-supplied name for storage/display
+        file.name = safe_filename(original)
+        return file
 
     def validate(self, attrs):
         for field in SAFE_TEXT_FIELDS:
@@ -558,19 +703,14 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
 
         return attrs
 
-
     def to_representation(self, instance):
         data = super().to_representation(instance)
-
         for field in MASKED_FIELDS:
             if field in data and data[field]:
                 data[field] = _mask(str(data[field]))
-
         return data
 
-
     def create(self, validated_data):
-
         request = self.context.get("request")
 
         validated_data.pop('interventionName', None)
@@ -578,7 +718,6 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
 
         uploaded_documents = validated_data.pop('uploaded_documents', [])
         uploaded_document = validated_data.pop('uploadedDocument', None)
-        
 
         if uploaded_document:
             uploaded_documents.append(uploaded_document)
@@ -593,7 +732,7 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
             ProposalDocument.objects.create(
                 proposal=proposal,
                 document=document,
-                original_name=document.name,
+                original_name=document.name,   # now the sanitized, safe name
                 is_public=proposal.is_public
             )
 
@@ -608,6 +747,7 @@ class InterventionProposalSerializer(serializers.ModelSerializer):
         if x_forwarded_for:
             return x_forwarded_for.split(",")[0].strip()
         return request.META.get("REMOTE_ADDR")
+
 
 class ProposalSubmissionSerializer(serializers.ModelSerializer):
     temp_files = serializers.SerializerMethodField()

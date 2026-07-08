@@ -33,6 +33,7 @@ from .views import (
     TopicPriorityViewSet,
     UsersListView,
     WeightingReportView,
+    proposal_detail_any,
     search_interventions,
 )
 
@@ -81,5 +82,6 @@ urlpatterns = [
     path("scoring-report/", ScoringReportView.as_view(), name="scoring-report"),
     path("interventions/search/", search_interventions),
     path("weighting/", WeightingReportView.as_view(), name="weighting-report"),
+    path("proposals/<uuid:pk>/", proposal_detail_any),
     # path("admin-report/", AdminScoreViewSet.as_view(), name="scoring-report"),
 ]

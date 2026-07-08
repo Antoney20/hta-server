@@ -21,7 +21,11 @@ def _fetch_from_db(target_type: str, target_id: str) -> list:
     qs = (
         CriteriaInformation.objects
         .filter(**{field: target_id})
-        .select_related("intervention", "national_proposal", "created_by")
+        .select_related(
+            "intervention", "intervention__package",
+            "national_proposal", "national_proposal__package",
+            "created_by",
+        )
     )
     return list(qs)
 

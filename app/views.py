@@ -42,6 +42,7 @@ from app.services.criteria_rules import CriteriaRuleService as rules
 from app.services.final_template import  DecisionTemplateService as dt
 from app.services.benefits_package import create_package, delete_package, list_packages, update_package
 from app.services.evidence import AssessmentEvidenceService
+from app.services.lookup import ProposalLookupService as lookup
 from app.services.phase import InterventionPhaseService
 from app.services.program import InterventionPackageService
 from app.services.public_view import PublicProposalService
@@ -112,6 +113,17 @@ def _get_or_404(model, **kwargs):
         return None, _err(f"{model.__name__} not found.", 404)
  
 
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def proposal_detail_any(request, pk):
+    data = lookup.resolve(str(pk))
+    if data is None:
+        return Response(
+            {"success": False, "message": "No proposal matches the given id.", "data": None},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+    return Response({"success": True, "message": "Success", "data": data})
 
 
 def _notify_assigned_users(sub: SubActivity) -> None:
@@ -526,8 +538,8 @@ class InterventionSystemCategoryViewSet(viewsets.ModelViewSet):
                     or self.request.user.has_role(UserRole.SECRETARIAT)
                 )
             ):
-                return [permissions.AllowAny()]  # already manually validated
-            return [permissions.IsAdminUser()]  # forces 403
+                return [permissions.AllowAny()] 
+            return [permissions.IsAdminUser()]  
 
         return [permissions.IsAuthenticated()]
  
@@ -557,7 +569,11 @@ class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericView
         try:
             instance = (
                 CriteriaInformation.objects
-                .select_related("intervention", "created_by")
+                .select_related(
+                    "intervention", "intervention__package",
+                    "national_proposal", "national_proposal__package",
+                    "created_by",
+                )
                 .get(pk=kwargs["pk"])
             )
         except CriteriaInformation.DoesNotExist:
@@ -577,18 +593,23 @@ class CriteriaInformationViewSet(RetrieveModelMixin, ListModelMixin, GenericView
             permission_classes=[permissions.IsAuthenticated])
     def by_intervention(self, request):
         intervention_id = request.query_params.get("intervention")
-        if not intervention_id:
+        national_id = request.query_params.get("national_proposal")
+
+        if intervention_id:
+            qs = criteria_info.get_criteria_for_target("intervention", intervention_id)
+        elif national_id:
+            qs = criteria_info.get_criteria_for_target("national_proposal", national_id)
+        else:
             return Response(
-                {"success": False, "message": "intervention query param is required.", "data": None},
+                {"success": False, "message": "intervention or national_proposal query param is required.", "data": None},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        qs = criteria_info.get_criteria_for_intervention(intervention_id)
+
         return Response({
             "success": True,
             "message": "Success",
             "data": CriteriaInformationSerializer(qs, many=True).data,
         })
- 
 
     @action(detail=False, methods=["post"], url_path="create",
             permission_classes=[permissions.IsAuthenticated, IsAdmin | IsSecretariate])

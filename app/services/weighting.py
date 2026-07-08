@@ -37,6 +37,7 @@ class NormalisedScore:
 class InterventionNormalised:
     intervention_id: str
     intervention_name: str
+    intervention_reference: Optional[str] 
     normalised: list[NormalisedScore] = field(default_factory=list)
 
 
@@ -147,6 +148,7 @@ class ReviewerInterventionScore:
     reviewer_username: Optional[str]
     intervention_id: str
     intervention_name: str
+    intervention_reference: Optional[str]  
     weighted_criteria: dict[str, float] = field(default_factory=dict)  
     total_score: float = 0.0
 
@@ -168,6 +170,7 @@ class ReviewerInterventionRank:
     rank: int
     intervention_id: str
     intervention_name: str
+    intervention_reference: Optional[str] 
     total_score: float
 
 
@@ -182,6 +185,7 @@ class InterventionAggregateScore:
     """
     intervention_id: str
     intervention_name: str
+    intervention_reference: Optional[str] 
     reviewer_count: int = 0
     package: Optional[str] = None
     phase: Optional[str] = None
@@ -197,6 +201,7 @@ class AggregateRankingEntry:
     rank: int
     intervention_id: str
     intervention_name: str
+    intervention_reference: Optional[str] 
     reviewer_count: int
     value: float
 
@@ -312,7 +317,7 @@ def _build_normalisation(
     anchor_map = {a.criteria_name: a for a in anchors}
     rows = []
     for iv_id in scored_intervention_ids:
-        _ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
+        _ref,iv_ref,  iv_name, _pkg, _phase = intervention_meta[iv_id]
         iv_scores = reviewer_scores.get(iv_id, {})
         normalised = []
         for cname in criteria_names:
@@ -327,6 +332,7 @@ def _build_normalisation(
         rows.append(InterventionNormalised(
             intervention_id=iv_id,
             intervention_name=iv_name,
+            intervention_reference=iv_ref,
             normalised=normalised,
         ))
     return rows
@@ -509,7 +515,7 @@ def _build_reviewer_scores(
         reviewer_iv_scores = score_index.get(rr.reviewer_id, {})
 
         for iv_id, iv_scores in reviewer_iv_scores.items():
-            _ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
+            _ref, iv_ref, iv_name, _pkg, _phase = intervention_meta[iv_id]
 
             criteria_scores: list[CriteriaWeightedScore] = []
             for cname in criteria_names:
@@ -539,6 +545,7 @@ def _build_reviewer_scores(
                 reviewer_username = rr.reviewer_username,
                 intervention_id   = iv_id,
                 intervention_name = iv_name,
+                intervention_reference = iv_ref, 
                 weighted_criteria = weighted_criteria,  # ← correct field
                 total_score       = total,
             ))
@@ -566,6 +573,7 @@ def _build_reviewer_rankings(
                 rank              = idx + 1,
                 intervention_id   = r.intervention_id,
                 intervention_name = r.intervention_name,
+                intervention_reference = r.intervention_reference, 
                 total_score       = r.total_score,
             )
             for idx, r in enumerate(sorted_rows)
@@ -631,7 +639,7 @@ def _build_average_scores(
     #     ))
     
     for iv_id, criteria_lists in criteria_accum.items():
-        _ref, iv_name, pkg, phase = intervention_meta[iv_id]
+        _ref, iv_ref, iv_name, pkg, phase = intervention_meta[iv_id]
         reviewer_totals = totals_accum.get(iv_id, [])
         reviewer_count = len(reviewer_totals)
 
@@ -645,6 +653,7 @@ def _build_average_scores(
         average_scores.append(InterventionAggregateScore(
             intervention_id     = iv_id,
             intervention_name   = iv_name,
+            intervention_reference = iv_ref,  
             package             = pkg,
             phase               = phase,
             reviewer_count      = reviewer_count,
@@ -660,6 +669,7 @@ def _build_average_scores(
             rank              = rank_pos,
             intervention_id   = entry.intervention_id,
             intervention_name = entry.intervention_name,
+            intervention_reference = entry.intervention_reference,
             reviewer_count    = entry.reviewer_count,
             value             = entry.average_value_score,
         )
@@ -668,7 +678,6 @@ def _build_average_scores(
 
     return average_scores, average_ranking
 
-# ── Main service ──────────────────────────────────────────────────────────────
 
 class WeightingReportService:
 
@@ -706,6 +715,7 @@ class WeightingReportService:
                 str(iv.id): (
                     getattr(iv, "reference_number", str(iv.id)),
                     getattr(iv, "intervention_name", str(iv)),
+                    iv.reference_number or str(iv.id), 
                     iv.package.name if iv.package_id else None,
                     iv.phase.name if iv.phase_id else None,
                 )
