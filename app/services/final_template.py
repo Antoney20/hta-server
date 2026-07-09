@@ -64,7 +64,6 @@ class DecisionTemplateService:
         rule_by_crit = DecisionTemplateService._rules()
         return _ok(DecisionTemplateService._target(kind, t, rule_by_crit, request))
 
-    # ── generate (full payload, bulk — the AI feed) ───────
     @staticmethod
     def generate(payload, request=None, user=None):
         """

@@ -44,9 +44,9 @@ class InterventionPhase(models.Model):
 # program interventions. , sha, nrh, 
 class NationalProgram(models.Model):
     name = models.CharField(max_length=200, unique=True)
-    code = models.CharField(max_length=40, unique=True)         # MOH-HIV, MOH-NCD, SHA, NRFH
+    code = models.CharField(max_length=40, unique=True)        
     description = models.TextField(blank=True)
-    field_schema = models.JSONField(default=list, blank=True)   # [{key,label,type,required,options}]
+    field_schema = models.JSONField(default=list, blank=True)   
     is_active = models.BooleanField(default=True)
     
     created_at = models.DateTimeField(auto_now_add=True)
@@ -118,7 +118,6 @@ class NationalProgramProposal(models.Model):
         ]
  
     def clean(self):
-        # validate required dynamic fields against the program's schema
         for f in self.program.field_schema or []:
             key = f.get("key")
             if key and f.get("required") and not self.data.get(key):
@@ -1075,8 +1074,173 @@ class DecisionTemplateCriterion(models.Model):
 
     def __str__(self):
         return f"{self.template.name} — {self.criterion.criteria}"
+    
+    
+    
+    
+
+class PanelAppraisal(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    intervention = models.ForeignKey(
+        InterventionProposal, on_delete=models.CASCADE,
+        related_name="panel_appraisals", null=True, blank=True,
+    )
+    national_proposal = models.ForeignKey(
+        NationalProgramProposal, on_delete=models.CASCADE,
+        related_name="panel_appraisals", null=True, blank=True,
+    )
+
+    # run-level outcome
+    success = models.BooleanField(default=False)   # did the run complete for this target
+    total_score = models.FloatField(default=0.0)   # sum of criterion scores
+    rank = models.PositiveIntegerField(null=True, blank=True)
+
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def target(self):
+        return self.intervention or self.national_proposal
+
+    @property
+    def target_type(self) -> str:
+        return "national_proposal" if self.national_proposal_id else "intervention"
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Appraisal — {self.target}"
+
+
+class AppraisalScore(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appraisal = models.ForeignKey(PanelAppraisal, on_delete=models.CASCADE, related_name="scores")
+    criterion = models.ForeignKey(CriteriaAppraisalTool, on_delete=models.PROTECT, related_name="appraisal_scores")
+
+    ok = models.BooleanField(default=False)                 # did this criterion score
+    score = models.FloatField(null=True, blank=True)        # null when not ok
+    reasoning = models.TextField(null=True, blank=True)     # required when ok
+    failure_reason = models.TextField(null=True, blank=True)  # required when not ok (e.g. "blank / no data")
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["criterion__criteria"]
+
+    def __str__(self):
+        state = f"{self.score}" if self.ok else "—"
+        return f"{self.criterion.criteria}: {state}"
+
+
+class AppraisalNote(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appraisal = models.ForeignKey(PanelAppraisal, on_delete=models.CASCADE, related_name="notes")
+    score = models.ForeignKey(
+        AppraisalScore, on_delete=models.CASCADE,
+        related_name="notes", null=True, blank=True,   # null → whole-appraisal note
+    )
+
+    body = models.TextField()
+    is_prompt = models.BooleanField(default=False)
+    author = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["created_at"]
+
+    def __str__(self):
+        return f"{'Prompt' if self.is_prompt else 'Comment'} — {self.appraisal_id}"
 
  
+ 
+ 
+ 
+ 
+ 
+ 
+#agentic
+class AIProviderKey(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    provider = models.CharField(max_length=50)       
+    label = models.CharField(max_length=120, blank=True)
+    key = models.CharField(max_length=300)
+    is_default = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["provider", "-is_default", "-created_at"]
+
+    def __str__(self):
+        return f"{self.provider} key ({self.label or 'default'})" 
+    
+class AIModel(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=120)
+    provider = models.CharField(max_length=50)        # free-text
+    model_string = models.CharField(max_length=200)
+    is_default = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    temperature = models.FloatField(default=0.2)
+    max_tokens = models.IntegerField(default=8000)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-is_default", "name"]
+
+    def save(self, *args, **kwargs):
+        if self.is_default:
+            AIModel.objects.exclude(pk=self.pk).filter(is_default=True).update(is_default=False)
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({self.provider})"
+    
+
+class AgentPrompt(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=120, unique=True)  
+    template = models.TextField()                          
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["name"]
+
+    def __str__(self):
+        return self.name
+
+
+class AppraisalRun(models.Model):
+    """
+    Audit record of one agent invocation. Stores the exact prompt + raw response
+    so any score traces back to what the model saw and said.
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    appraisal = models.ForeignKey(
+        PanelAppraisal, on_delete=models.CASCADE,
+        related_name="runs", null=True, blank=True,   # null if run failed before persist
+    )
+    model = models.ForeignKey(AIModel, on_delete=models.SET_NULL, null=True, blank=True)
+    prompt_sent = models.TextField()
+    raw_response = models.TextField(blank=True)
+    parsed_ok = models.BooleanField(default=False)
+    error = models.TextField(blank=True)
+    duration_ms = models.IntegerField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"Run {self.id} — {'ok' if self.parsed_ok else 'failed'}"
+
+
+
 class BenefitPackage(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200, db_index=True)

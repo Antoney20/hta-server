@@ -2227,12 +2227,25 @@ class DecisionTemplateViewSet(viewsets.ViewSet):
         if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdmin()]
         return [IsAuthenticated()]
 
+    def _can_regenerate(self, request):
+        return bool(IsSecretariatOrAdmin().has_permission(request, self))
+
     def list(self, request):
-        return _respond(dt.list_templates(request.query_params, request))
+        if self._can_regenerate(request):
+            return _respond(dt.generate(request.data, request, request.user))
+        return _respond(dt.generate(request.data, request, request.user))
+
     def retrieve(self, request, pk=None):
-        return _respond(dt.get_template(pk, request))
+        return _respond(dt.get_template(pk, request, can_regenerate=self._can_regenerate(request)))
+
     def create(self, request):
         return _respond(dt.generate(request.data, request, request.user))
+
     def destroy(self, request, pk=None):
         return _respond(dt.delete_template(pk))
-    
+
+
+
+
+
+
