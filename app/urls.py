@@ -1,9 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from .views import (
+    AIModelViewSet,
+    AIProviderKeyViewSet,
     ActivityViewSet,
     AdminScoreViewSet,
     AppraisalCriteriaEvidenceViewSet,
+    AppraisalViewSet,
     AssessmentEvidenceViewSet,
     BenefitPackageViewSet,
     CriteriaAppraisalScoreViewSet,
@@ -72,7 +75,10 @@ router.register("evidence-coverage", EvidenceCoverageViewSet, basename="evidence
 router.register("criteria-rules", CriteriaRuleViewSet, basename="criteria-rules")
 router.register("decision-templates", DecisionTemplateViewSet, basename="decision-templates")
 
-
+#agentic
+router.register("ai-keys", AIProviderKeyViewSet, basename="ai-keys")
+router.register("ai-models", AIModelViewSet, basename="ai-models")
+router.register("appraisals", AppraisalViewSet, basename="appraisals")
 
 
 # urlpatterns = router.urls

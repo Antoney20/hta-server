@@ -1164,10 +1164,12 @@ class AppraisalNote(models.Model):
 #agentic
 class AIProviderKey(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    provider = models.CharField(max_length=50)       
+    provider = models.CharField(max_length=50)
     label = models.CharField(max_length=120, blank=True)
     key = models.CharField(max_length=300)
-    is_default = models.BooleanField(default=True)
+    model_string = models.CharField(max_length=200,blank=True)
+    temperature = models.FloatField(default=0.3)
+    is_default = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -1175,9 +1177,10 @@ class AIProviderKey(models.Model):
         ordering = ["provider", "-is_default", "-created_at"]
 
     def __str__(self):
-        return f"{self.provider} key ({self.label or 'default'})" 
+        return f"{self.provider} key ({self.label or 'default'})"
     
-class AIModel(models.Model):
+
+class AIModel(models.Model): # not used
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120)
     provider = models.CharField(max_length=50)        # free-text
@@ -1200,7 +1203,7 @@ class AIModel(models.Model):
         return f"{self.name} ({self.provider})"
     
 
-class AgentPrompt(models.Model):
+class AgentPrompt(models.Model): # not used
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=120, unique=True)  
     template = models.TextField()                          

@@ -193,3 +193,18 @@ class DecisionTemplateService:
                 "file": _abs(request, f.url if f else None),
             })
         return out
+        
+    @classmethod
+    def evidence_for_target(cls, target_type: str, target_id: str, request=None) -> dict:
+        """
+        One target's full evidence payload — the same EvidenceTarget the detail
+        endpoint returns (criteria, each with target_fields, evidence, guides).
+        Resolves the target, then delegates to the single-target builder (`_target`).
+        """
+        model = InterventionProposal if target_type == "intervention" else NationalProgramProposal
+        t = (model.objects.filter(pk=target_id)
+             .select_related("package", "phase").first())
+        if not t:
+            raise ValueError(f"{target_type} {target_id} not found")
+        return cls._target(target_type, t, cls._rules(), request)
+

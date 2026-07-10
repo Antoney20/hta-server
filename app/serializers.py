@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -910,6 +910,66 @@ class DecisionTemplateListSerializer(serializers.ModelSerializer):
     def get_target_name(self, obj):
         t = self._t(obj)
         return getattr(t, "intervention_name", None) or getattr(t, "title", None)
+
+
+class AIProviderKeySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AIProviderKey
+        fields = "__all__"
+        read_only_fields = ["id", "created_at"]
+        extra_kwargs = {"key": {"write_only": True}}
+
+
+class AIModelSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AIModel
+        fields = "__all__"
+
+
+class AppraisalScoreSerializer(serializers.ModelSerializer):
+    criterion_name = serializers.CharField(source="criterion.criteria", read_only=True)
+
+    class Meta:
+        model = AppraisalScore
+        fields = ["id", "criterion", "criterion_name", "ok", "score",
+                  "reasoning", "failure_reason", "created_at"]
+
+
+class PanelAppraisalSerializer(serializers.ModelSerializer):
+    """Thin list row."""
+    target_type = serializers.CharField(read_only=True)
+    target_name = serializers.SerializerMethodField()
+    reference_number = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PanelAppraisal
+        fields = ["id", "target_type", "target_name", "reference_number",
+                  "intervention", "national_proposal",
+                  "success", "total_score", "rank", "created_at"]
+
+    def get_target_name(self, obj):
+        t = obj.target
+        return getattr(t, "intervention_name", None) or getattr(t, "title", None) or "—"
+
+    def get_reference_number(self, obj):
+        return getattr(obj.target, "reference_number", None)
+
+
+class AppraisalRunSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = AppraisalRun
+        fields = ["id", "parsed_ok", "error", "duration_ms", "created_at"]
+
+
+
+class PanelAppraisalDetailSerializer(PanelAppraisalSerializer):
+    """Full output — scores with reasoning + run audit."""
+    scores = AppraisalScoreSerializer(many=True, read_only=True)
+    runs = AppraisalRunSerializer(many=True, read_only=True)
+
+    class Meta(PanelAppraisalSerializer.Meta):
+        fields = PanelAppraisalSerializer.Meta.fields + ["scores", "runs"]
+
 
 
 

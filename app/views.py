@@ -36,6 +36,8 @@ from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.services import criteria_info
+from app.services.appraisal.running import generation_status
+from app.services.appraisal.service import appraise_repeated, appraise_target, appraise_targets
 from app.services.appraisal_panel import AppraisalPanelService
 from app.services.evidence_coverage import EvidenceCoverageService as cov
 from app.services.criteria_rules import CriteriaRuleService as rules
@@ -55,8 +57,10 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from .serializers import (
+    AIModelSerializer,
+    AIProviderKeySerializer,
     ActivitySerializer,
     AppraisalCriteriaEvidenceSerializer,
     AppraisalCriteriaEvidenceWriteSerializer,
@@ -82,6 +86,8 @@ from .serializers import (
     InterventionStatusUpdateWriteSerializer,
     NationalProgramProposalSerializer,
     NationalProgramSerializer,
+    PanelAppraisalDetailSerializer,
+    PanelAppraisalSerializer,
     SelectionToolSerializer,
     SubActivitySerializer,
     SystemCategorySerializer,
@@ -2243,6 +2249,166 @@ class DecisionTemplateViewSet(viewsets.ViewSet):
 
     def destroy(self, request, pk=None):
         return _respond(dt.delete_template(pk))
+
+
+
+class AIProviderKeyViewSet(viewsets.ModelViewSet):
+    """Manage provider API keys. Admin only. Keys are write-only in output."""
+    queryset = AIProviderKey.objects.all()
+    serializer_class = AIProviderKeySerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def list(self, request, *args, **kwargs):
+        return _ok(self.get_serializer(self.get_queryset(), many=True).data)
+
+    def create(self, request, *args, **kwargs):
+        ser = self.get_serializer(data=request.data)
+        if not ser.is_valid():
+            return _err(ser.errors, 422)
+        obj = ser.save()
+        self._enforce_single_default(obj)
+        return _ok(self.get_serializer(obj).data, "Key added.", 201)
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop("partial", False)
+        obj = self.get_object()
+        ser = self.get_serializer(obj, data=request.data, partial=partial)
+        if not ser.is_valid():
+            return _err(ser.errors, 422)
+        obj = ser.save()
+        self._enforce_single_default(obj)
+        return _ok(self.get_serializer(obj).data, "Key updated.")
+
+    def partial_update(self, request, *args, **kwargs):
+        kwargs["partial"] = True
+        return self.update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        obj = self.get_object()
+        provider = obj.provider
+        obj.delete()
+        return _ok(None, f"{provider} key deleted.")
+
+    @staticmethod
+    def _enforce_single_default(obj):
+        """One default per provider: if this key is default, demote its siblings."""
+        if obj.is_default:
+            AIProviderKey.objects.filter(
+                provider=obj.provider, is_default=True
+            ).exclude(pk=obj.pk).update(is_default=False)
+
+class AIModelViewSet(viewsets.ModelViewSet):
+    """Manage selectable AI models. Admin only."""
+    queryset = AIModel.objects.all()
+    serializer_class = AIModelSerializer
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+
+    def list(self, request, *args, **kwargs):
+        return _ok(self.get_serializer(self.get_queryset(), many=True).data)
+
+
+
+class AppraisalViewSet(viewsets.ViewSet):
+    permission_classes = [permissions.IsAuthenticated, IsAdmin]
+    
+    def _reject_if_running(self):
+        status = generation_status()
+        if status["running"]:
+            return _err(
+                "A generation run is already in progress. Wait for it to finish.",
+                409,  
+                {"error_code": "generation_in_progress", "since": status.get("since")},
+            )
+        return None
+
+    # POST /v3/appraisals/generate/
+    # body: { target_type, target_id, extra_guidance? }
+    @action(detail=False, methods=["post"], url_path="generate")
+    def generate(self, request):
+        busy = self._reject_if_running()
+        if busy:
+            return busy
+        tt = request.data.get("target_type")
+        tid = request.data.get("target_id")
+        if tt not in ("intervention", "national_proposal") or not tid:
+            return _err("target_type ('intervention'|'national_proposal') and target_id are required.", 422)
+
+        result = appraise_target(
+            target_type=tt, target_id=tid, user=request.user,
+            extra_guidance=request.data.get("extra_guidance", ""),
+        )
+        if not result["success"]:
+            # surface the wrapper's error_code so the FE can branch
+            return _err(result.get("error", "Appraisal failed."),
+                        422, {"error_code": result.get("error_code")})
+        return _ok(result, "Appraisal generated.", 201)
+
+    # POST /v3/appraisals/generate-batch/
+    # body: { targets: [ {target_type, target_id}, ... ] }
+    @action(detail=False, methods=["post"], url_path="generate-batch")
+    def generate_batch(self, request):
+        busy = self._reject_if_running()
+        if busy:
+            return busy
+        raw = request.data.get("targets", [])
+        targets = [
+            (t.get("target_type"), t.get("target_id"))
+            for t in raw
+            if t.get("target_type") in ("intervention", "national_proposal") and t.get("target_id")
+        ]
+        if not targets:
+            return _err("Provide a non-empty 'targets' list of {target_type, target_id}.", 422)
+
+        data = appraise_targets(targets, user=request.user)
+        return _ok(data, f"Ran {data['count']} appraisals.")
+
+    # POST /v3/appraisals/test-runs/
+    # body: { target_type, target_id, runs? }  — accuracy/consistency harness
+    @action(detail=False, methods=["post"], url_path="test-runs")
+    def test_runs(self, request):
+        busy = self._reject_if_running()
+        if busy:
+            return busy
+        tt = request.data.get("target_type")
+        tid = request.data.get("target_id")
+        if tt not in ("intervention", "national_proposal") or not tid:
+            return _err("target_type and target_id are required.", 422)
+
+        data = appraise_repeated(
+            target_type=tt, target_id=tid,
+            runs=int(request.data.get("runs", 3)), user=request.user,
+        )
+        return _ok(data, f"Completed {data['runs']} runs.")
+
+    # GET /v3/appraisals/                     → list all (thin)
+    # GET /v3/appraisals/?target=<uuid>       → filter by target
+    def list(self, request):
+        qs = (
+            PanelAppraisal.objects
+            .select_related("intervention", "national_proposal", "created_by")
+            .prefetch_related("scores__criterion")
+        )
+        target = request.query_params.get("target")
+        if target:
+            qs = qs.filter_by_target(target) if hasattr(qs, "filter_by_target") else qs
+            # fall back to explicit OR filter
+            from django.db.models import Q
+            qs = qs.filter(Q(intervention_id=target) | Q(national_proposal_id=target))
+        return _ok(PanelAppraisalSerializer(qs, many=True).data)
+
+    # GET /v3/appraisals/<pk>/                → full output with scores + reasoning
+    def retrieve(self, request, pk=None):
+        try:
+            obj = (
+                PanelAppraisal.objects
+                .select_related("intervention", "national_proposal", "created_by")
+                .prefetch_related("scores__criterion", "runs")
+                .get(pk=pk)
+            )
+        except PanelAppraisal.DoesNotExist:
+            return _err("Appraisal not found.", 404)
+        return _ok(PanelAppraisalDetailSerializer(obj).data)
+
 
 
 

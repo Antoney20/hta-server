@@ -13,7 +13,7 @@ class GeminiProvider(Provider):
         try:
             client = genai.Client(api_key=self.api_key)
             resp = client.models.generate_content(
-                model=self.model_string,
+                model="gemini-3.5-flash",
                 contents=rendered,
                 config=types.GenerateContentConfig(
                     temperature=self.temperature,

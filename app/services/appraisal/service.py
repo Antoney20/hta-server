@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 def _criterion_map() -> dict[str, CriteriaAppraisalTool]:
+    """Criterion name (lower) -> tool row, for resolving parsed criterion names."""
     return {c.criteria.strip().lower(): c for c in CriteriaAppraisalTool.objects.all()}
 
 
@@ -29,11 +30,10 @@ def _persist(target_type, target_id, parsed, result, user, cmap) -> PanelApprais
             appraisal.intervention_id = target_id
         appraisal.save()
 
-        total = 0.0
         for row in parsed["scores"]:
             criterion = cmap.get(row["criterion"].strip().lower())
             if criterion is None:
-                continue  # model named a criterion we don't have — skip, don't crash
+                continue
             AppraisalScore.objects.create(
                 appraisal=appraisal,
                 criterion=criterion,
@@ -42,15 +42,13 @@ def _persist(target_type, target_id, parsed, result, user, cmap) -> PanelApprais
                 reasoning=row["reasoning"],
                 failure_reason=row["failure_reason"],
             )
-            if row["ok"] and row["score"] is not None:
-                total += row["score"]
 
-        appraisal.total_score = total
-        appraisal.save(update_fields=["total_score"])
-
+        # model FK stays null: the provider ran off an AIProviderKey, not an AIModel row.
+        # The resolved model_name/provider live on the RawResult and are returned to the
+        # caller; persisting them for audit needs a schema field (see note).
         AppraisalRun.objects.create(
             appraisal=appraisal,
-            model=None,  # RawResult carries model_name/provider (strings), see note
+            model=None,
             prompt_sent=result.rendered,
             raw_response=result.raw,
             parsed_ok=True,
@@ -59,10 +57,13 @@ def _persist(target_type, target_id, parsed, result, user, cmap) -> PanelApprais
     return appraisal
 
 
+
+
+
 def appraise_target(target_type: str, target_id: str, user=None, extra_guidance: str = "") -> dict:
     """
-    Full appraisal for ONE target. Never raises — returns a structured result with
-    an error_code on failure. Persists on success (and an audit row on failure).
+    Full appraisal for ONE target. Never raises — returns a structured result with an
+    error_code on failure. Persists on success; writes an audit row on failure too.
     """
     def _fail(code, message, rendered="", raw=""):
         try:
@@ -70,19 +71,18 @@ def appraise_target(target_type: str, target_id: str, user=None, extra_guidance:
                 prompt_sent=rendered, raw_response=raw,
                 parsed_ok=False, error=f"[{code}] {message}",
             )
+            
         except Exception:
             logger.exception("Failed to write failed-run audit record")
         return {"success": False, "target_type": target_type, "target_id": target_id,
                 "error": message, "error_code": code, "scores": []}
 
-    # build context
     try:
         context = build_appraisal_context(target_type, target_id, extra_guidance)
     except Exception as e:
         logger.exception("Context build failed for %s %s", target_type, target_id)
         return _fail("processing_error", f"Failed to prepare appraisal input: {e}")
 
-    # run through the wrapper
     try:
         result = agentic_run(context)
     except ConfigError as e:
@@ -97,14 +97,12 @@ def appraise_target(target_type: str, target_id: str, user=None, extra_guidance:
         logger.exception("Agentic run failed for %s %s", target_type, target_id)
         return _fail("connection_error", f"Unexpected error contacting the model: {e}")
 
-    # parse against the appraisal contract
     try:
         parsed = parse_appraisal_response(result.raw)
     except ProcessingError as e:
         return _fail("processing_error", f"Failed to process the model response: {e}",
                      rendered=result.rendered, raw=result.raw)
 
-    # persist
     try:
         appraisal = _persist(target_type, target_id, parsed, result, user, _criterion_map())
     except Exception as e:
@@ -117,7 +115,6 @@ def appraise_target(target_type: str, target_id: str, user=None, extra_guidance:
         "appraisal_id": str(appraisal.id),
         "target_type": target_type,
         "target_id": target_id,
-        "total_score": appraisal.total_score,
         "model": result.model_name,
         "provider": result.provider,
         "duration_ms": result.duration_ms,
@@ -138,11 +135,10 @@ def appraise_targets(targets: list[tuple[str, str]], user=None) -> dict:
 
 def appraise_repeated(target_type: str, target_id: str, runs: int = 3, user=None) -> dict:
     """
-    Run the SAME target N times for accuracy/consistency testing. Each run is a
-    separate PanelAppraisal + AppraisalRun, so you can compare score stability
-    across runs. Returns every run plus a per-criterion variance summary.
+    Run the SAME target N times for consistency testing. Each run is a separate
+    PanelAppraisal + AppraisalRun, so score stability can be compared across runs.
     """
-    runs = max(1, min(runs, 20))  # sane cap
+    runs = max(1, min(runs, 20))
     outcomes = []
     with ThreadPoolExecutor(max_workers=getattr(settings, "GEMINI_WORKERS", 10)) as pool:
         futures = [
@@ -163,8 +159,8 @@ def appraise_repeated(target_type: str, target_id: str, runs: int = 3, user=None
 
 def _consistency_summary(outcomes: list[dict]) -> list[dict]:
     """
-    Per-criterion: how many runs scored it, the distinct scores seen, and the
-    spread (min/max). Lets you eyeball whether the model is stable on each criterion.
+    Per-criterion: how many runs scored it, the distinct scores seen, and the spread.
+    Lets you eyeball whether the model is stable on each criterion.
     """
     per_criterion: dict[str, list[float]] = {}
     for o in outcomes:
@@ -181,6 +177,6 @@ def _consistency_summary(outcomes: list[dict]) -> list[dict]:
             "distinct_scores": distinct,
             "min": min(scores),
             "max": max(scores),
-            "stable": len(distinct) == 1,   # same score every run
+            "stable": len(distinct) == 1,
         })
     return summary
