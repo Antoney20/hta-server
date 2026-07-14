@@ -6,6 +6,7 @@ from .views import (
     ActivityViewSet,
     AdminScoreViewSet,
     AppraisalCriteriaEvidenceViewSet,
+    AppraisalScoreViewSet,
     AppraisalViewSet,
     AssessmentEvidenceViewSet,
     BenefitPackageViewSet,
@@ -56,7 +57,7 @@ router.register(r"decision-types", DecisionTypeViewSet, basename="decision-type"
 router.register(r"feedback-categories",  FeedbackCategoryViewSet,    basename="feedback-category")
 router.register(r"feedback-email-logs",  FeedbackEmailLogViewSet,    basename="feedback-email-log")
 router.register(r"appraisal-criteria", CriteriaAppraisalToolViewSet, basename="appraisal-criteria")
-router.register(r"appraisal-scores",   CriteriaAppraisalScoreViewSet, basename="appraisal-scores")
+# router.register(r"appraisal-scores",   CriteriaAppraisalScoreViewSet, basename="appraisal-scores"
 router.register(r"appraisal-evidence", AppraisalCriteriaEvidenceViewSet, basename="appraisal-evidence",)
 router.register(r"activities", ActivityViewSet, basename="activities")
 router.register(r"sub-activities", SubActivityViewSet, basename="sub-activities")
@@ -79,6 +80,7 @@ router.register("decision-templates", DecisionTemplateViewSet, basename="decisio
 router.register("ai-keys", AIProviderKeyViewSet, basename="ai-keys")
 router.register("ai-models", AIModelViewSet, basename="ai-models")
 router.register("appraisals", AppraisalViewSet, basename="appraisals")
+router.register(r"appraisal-scores", AppraisalScoreViewSet, basename="appraisal-score")
 
 
 # urlpatterns = router.urls

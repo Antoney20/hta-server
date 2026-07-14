@@ -36,6 +36,7 @@ from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.services import criteria_info
+from app.services.appraisal.agentic_results import bulk_delete_appraisals, bulk_delete_scores, delete_appraisal, delete_score, edit_score, get_agentic_results
 from app.services.appraisal.running import generation_status
 from app.services.appraisal.service import appraise_repeated, appraise_target, appraise_targets
 from app.services.appraisal_panel import AppraisalPanelService
@@ -2396,19 +2397,74 @@ class AppraisalViewSet(viewsets.ViewSet):
             qs = qs.filter(Q(intervention_id=target) | Q(national_proposal_id=target))
         return _ok(PanelAppraisalSerializer(qs, many=True).data)
 
-    # GET /v3/appraisals/<pk>/                → full output with scores + reasoning
-    def retrieve(self, request, pk=None):
-        try:
-            obj = (
-                PanelAppraisal.objects
-                .select_related("intervention", "national_proposal", "created_by")
-                .prefetch_related("scores__criterion", "runs")
-                .get(pk=pk)
-            )
-        except PanelAppraisal.DoesNotExist:
-            return _err("Appraisal not found.", 404)
-        return _ok(PanelAppraisalDetailSerializer(obj).data)
+    # # GET /v3/appraisals/<pk>/                → full output with scores + reasoning
+    # def retrieve(self, request, pk=None):
+    #     try:
+    #         obj = (
+    #             PanelAppraisal.objects
+    #             .select_related("intervention", "national_proposal", "created_by")
+    #             .prefetch_related("scores__criterion", "runs")
+    #             .get(pk=pk)
+    #         )
+    #     except PanelAppraisal.DoesNotExist:
+    #         return _err("Appraisal not found.", 404)
+    #     return _ok(PanelAppraisalDetailSerializer(obj).data)
 
+
+
+
+
+class AppraisalScoreViewSet(viewsets.ViewSet):
+    """Results + human review — read grouped results, edit/verify/delete AI outputs."""
+
+    ADMIN_ACTIONS = {"edit", "destroy", "delete_appraisal", "bulk_delete"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS:
+            return [permissions.IsAuthenticated(), IsAdmin()]
+        return [permissions.IsAuthenticated()]
+
+    # @action(detail=False, methods=["get"] )
+    def list(self, request):
+        data = get_agentic_results(target=request.query_params.get("target"))
+        return _ok(data, f"{len(data)} target(s).")
+    
+    @action(detail=True, methods=["patch"], url_path="edit")
+    def edit(self, request, pk=None):
+        out = edit_score(
+            pk,
+            final_score=request.data.get("final_score"),
+            verified=request.data.get("verified"),
+            notes=request.data.get("notes"),
+        )
+        return _ok(out, "Score updated.") if out else _err("Score not found.", 404)
+
+    # DELETE /v3/appraisal-scores/<pk>/   
+    def destroy(self, request, pk=None):
+        out = delete_score(pk)
+        return _ok({"id": out}, "Score deleted.") if out else _err("Score not found.", 404)
+
+    # DELETE /v3/appraisal-scores/appraisals/<appraisal_id>/ 
+    @action(detail=False, methods=["delete"],
+            url_path=r"appraisals/(?P<appraisal_id>[^/.]+)")
+    def delete_appraisal(self, request, appraisal_id=None):
+        out = delete_appraisal(appraisal_id)
+        return _ok({"id": out}, "Appraisal deleted.") if out else _err("Appraisal not found.", 404)
+
+    # POST /v3/appraisal-scores/bulk-delete/  body: { score_ids?: [...], appraisal_ids?: [...] }
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        score_ids = request.data.get("score_ids") or []
+        appraisal_ids = request.data.get("appraisal_ids") or []
+        if not score_ids and not appraisal_ids:
+            return _err("Provide 'score_ids' and/or 'appraisal_ids'.", 422)
+        return _ok(
+            {
+                "scores": bulk_delete_scores(score_ids) if score_ids else None,
+                "appraisals": bulk_delete_appraisals(appraisal_ids) if appraisal_ids else None,
+            },
+            "Bulk delete complete.",
+        )
 
 
 

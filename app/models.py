@@ -132,10 +132,10 @@ class NationalProgramProposal(models.Model):
         seq = _next_sequence(template, period)
  
         # No locking: optimistic insert. On a unique clash, just try the next number.
-        for _ in range(100):
+        for _ in range(1000):
             self.reference_number = f"{template}-{period}-{seq:04d}"
             try:
-                with transaction.atomic():           #  clean retry on clash
+                with transaction.atomic():          
                     return super().save(*args, **kwargs)
             except IntegrityError:
                 seq += 1
@@ -1075,9 +1075,6 @@ class DecisionTemplateCriterion(models.Model):
     def __str__(self):
         return f"{self.template.name} — {self.criterion.criteria}"
     
-    
-    
-    
 
 class PanelAppraisal(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1091,8 +1088,7 @@ class PanelAppraisal(models.Model):
     )
 
     # run-level outcome
-    success = models.BooleanField(default=False)   # did the run complete for this target
-    total_score = models.FloatField(default=0.0)   # sum of criterion scores
+    success = models.BooleanField(default=False)   
     rank = models.PositiveIntegerField(null=True, blank=True)
 
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
@@ -1123,6 +1119,26 @@ class AppraisalScore(models.Model):
     score = models.FloatField(null=True, blank=True)        # null when not ok
     reasoning = models.TextField(null=True, blank=True)     # required when ok
     failure_reason = models.TextField(null=True, blank=True)  # required when not ok (e.g. "blank / no data")
+    notes = models.TextField(null=True, blank=True)  
+
+    # human iputs
+    final_score = models.FloatField(null=True, blank=True)
+    verified = models.BooleanField(default=False)
+    edited = models.BooleanField(default=False)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    @property
+    def effective_score(self):
+        return self.final_score if self.final_score is not None else self.score
+
+    class Meta:
+        ordering = ["criterion__criteria"]
+
+    def __str__(self):
+        state = f"{self.effective_score}" if (self.ok or self.final_score is not None) else "—"
+        return f"{self.criterion.criteria}: {state}"
 
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1137,10 +1153,10 @@ class AppraisalScore(models.Model):
 
 class AppraisalNote(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    appraisal = models.ForeignKey(PanelAppraisal, on_delete=models.CASCADE, related_name="notes")
+    appraisal = models.ForeignKey(PanelAppraisal, on_delete=models.CASCADE, related_name="notes_old")
     score = models.ForeignKey(
         AppraisalScore, on_delete=models.CASCADE,
-        related_name="notes", null=True, blank=True,   # null → whole-appraisal note
+        related_name="note_entries", null=True, blank=True,   
     )
 
     body = models.TextField()
@@ -1154,10 +1170,6 @@ class AppraisalNote(models.Model):
     def __str__(self):
         return f"{'Prompt' if self.is_prompt else 'Comment'} — {self.appraisal_id}"
 
- 
- 
- 
- 
  
  
  
@@ -1226,7 +1238,7 @@ class AppraisalRun(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     appraisal = models.ForeignKey(
         PanelAppraisal, on_delete=models.CASCADE,
-        related_name="runs", null=True, blank=True,   # null if run failed before persist
+        related_name="runs", null=True, blank=True,  
     )
     model = models.ForeignKey(AIModel, on_delete=models.SET_NULL, null=True, blank=True)
     prompt_sent = models.TextField()

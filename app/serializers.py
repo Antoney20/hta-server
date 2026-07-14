@@ -945,7 +945,7 @@ class PanelAppraisalSerializer(serializers.ModelSerializer):
         model = PanelAppraisal
         fields = ["id", "target_type", "target_name", "reference_number",
                   "intervention", "national_proposal",
-                  "success", "total_score", "rank", "created_at"]
+                  "success",  "rank", "created_at"]
 
     def get_target_name(self, obj):
         t = obj.target
