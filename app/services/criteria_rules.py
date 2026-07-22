@@ -1,5 +1,5 @@
-from app.models import CriteriaAppraisalTool, CriteriaRule, CriteriaGuideDocument
-from app.serializers import CriteriaRuleSerializer, CriteriaGuideDocumentSerializer
+from app.models import CriteriaAppraisalTool, CriteriaReferenceScale, CriteriaRule, CriteriaGuideDocument
+from app.serializers import CriteriaReferenceScaleSerializer, CriteriaRuleSerializer, CriteriaGuideDocumentSerializer
 
 
 def _ok(data=None, status=200):  return {"ok": True,  "data": data, "status": status}
@@ -76,7 +76,7 @@ class CriteriaRuleService:
 
     @staticmethod
     def list_rules(params):
-        qs = CriteriaRule.objects.select_related("criterion").prefetch_related("documents")
+        qs = CriteriaRule.objects.select_related("criterion").prefetch_related("documents", "scales")
         if criterion := params.get("criterion"):
             qs = qs.filter(criterion_id=criterion)
         active = params.get("active")
@@ -191,5 +191,55 @@ class CriteriaRuleService:
         if not obj: return _err("not found", 404)
         if obj.file:
             obj.file.delete(save=False)
+        obj.delete()
+        return _ok(status=204)
+    
+    
+    @staticmethod
+    def _validate_scale(payload):
+        """Light shape check only. The `data` blob is intentionally free-form
+        (CTCAE grades, GRADE rubric, etc. all differ), so we validate that it's a
+        container, not its internal structure. label-required is enforced by the serializer."""
+        if "data" in payload:
+            data = payload.get("data")
+            if data is not None and not isinstance(data, (dict, list)):
+                return "data must be an object or list"
+        return None
+
+    @staticmethod
+    def add_scale(rule_pk, payload):
+        rule = _get_or_404(CriteriaRule, rule_pk)
+        if not rule: return _err("rule not found", 404)
+        if err := CriteriaRuleService._validate_scale(payload):
+            return _err(err)
+        data = {
+            "rule":        rule.id,
+            "label":       payload.get("label", ""),
+            "source":      payload.get("source", ""),
+            "version":     payload.get("version", ""),
+            "description": payload.get("description", ""),
+            "data":        payload.get("data", {}),
+            "active":      payload.get("active", True),
+        }
+        s = CriteriaReferenceScaleSerializer(data=data)
+        if not s.is_valid(): return _err(s.errors)
+        s.save()
+        return _ok(s.data, 201)
+
+    @staticmethod
+    def update_scale(pk, payload):
+        obj = _get_or_404(CriteriaReferenceScale, pk)
+        if not obj: return _err("not found", 404)
+        if err := CriteriaRuleService._validate_scale(payload):
+            return _err(err)
+        s = CriteriaReferenceScaleSerializer(obj, data=payload, partial=True)
+        if not s.is_valid(): return _err(s.errors)
+        s.save()
+        return _ok(s.data)
+
+    @staticmethod
+    def delete_scale(pk):
+        obj = _get_or_404(CriteriaReferenceScale, pk)
+        if not obj: return _err("not found", 404)
         obj.delete()
         return _ok(status=204)

@@ -1,6 +1,8 @@
+from django.utils import timezone
 from django.db.models import Q
-
+from django.db import transaction
 from app.models import AppraisalScore, PanelAppraisal
+from app.services.appraisal_panel import _get_or_404
 
 
 
@@ -44,6 +46,8 @@ def _appraisal_block(ap):
         "id": str(ap.id),
         "success": ap.success,
         "rank": ap.rank,
+        "selected": ap.selected,
+        "final_comments": ap.final_comments,
         "created_at": ap.created_at.isoformat(),
         "created_by": getattr(ap.created_by, "username", None),
         "scores": [_score_block(s) for s in ap.scores.all()],
@@ -150,3 +154,51 @@ def bulk_delete_scores(ids):
         "deleted": len(found),
         "missing": [i for i in ids if str(i) not in found],
     }
+    
+
+
+@transaction.atomic
+def select_appraisal(appraisal_id, *, selected=True):
+    appr = _get_or_404(PanelAppraisal, appraisal_id)
+    if appr is None:
+        return None
+    if selected:                              # one per target — clear siblings
+        sibs = PanelAppraisal.objects.filter(selected=True)
+        sibs = (sibs.filter(intervention_id=appr.intervention_id) if appr.intervention_id
+                else sibs.filter(national_proposal_id=appr.national_proposal_id))
+        sibs.exclude(pk=appr.pk).update(selected=False)
+    appr.selected = bool(selected)
+    appr.save(update_fields=["selected", "updated_at"])
+    return {"id": str(appr.pk), "selected": appr.selected}
+
+
+def set_comment(appraisal_id, *, comments):   # panel: add / edit
+    appr = _get_or_404(PanelAppraisal, appraisal_id)
+    if appr is None:
+        return None
+    appr.final_comments = comments
+    appr.save(update_fields=["final_comments", "updated_at"])
+    return {"id": str(appr.pk), "final_comments": appr.final_comments}
+
+
+def clear_comment(appraisal_id):              # admin: delete
+    appr = _get_or_404(PanelAppraisal, appraisal_id)
+    if appr is None:
+        return None
+    appr.final_comments = None
+    appr.save(update_fields=["final_comments", "updated_at"])
+    return {"id": str(appr.pk), "final_comments": None}
+
+@transaction.atomic
+def bulk_set_selected(appraisal_ids, *, selected=True):
+    ids = [i for i in (appraisal_ids or []) if i]
+    if selected:                              
+        done = [out["id"] for aid in ids
+                if (out := select_appraisal(aid, selected=True))]
+        return {"count": len(done), "selected": True, "ids": done}
+    updated = (                            
+        PanelAppraisal.objects
+        .filter(pk__in=ids)
+        .update(selected=False, updated_at=timezone.now())
+    )
+    return {"count": updated, "selected": False, "ids": []}

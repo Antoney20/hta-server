@@ -36,7 +36,6 @@ class AppraisalPanelService:
         obj = _get_or_404(NationalProgramProposal, npr)
         return ({"national_proposal": obj}, None) if obj else (None, "national_proposal not found")
 
-    # ── criteria (panel workflow) ─────────────────────────
     @staticmethod
     def list_criteria(params):
         qs = CriteriaAppraisalTool.objects.all().order_by("criteria")
@@ -158,3 +157,4 @@ class AppraisalPanelService:
         if not isinstance(ids, list): return _err("expected a list of ids")
         n, _ = CriterionEvidence.objects.filter(id__in=ids).delete()
         return _ok({"deleted": n})
+    

@@ -15,6 +15,8 @@ from .parser import parse_appraisal_response
 logger = logging.getLogger(__name__)
 
 
+
+
 def _criterion_map() -> dict[str, CriteriaAppraisalTool]:
     """Criterion name (lower) -> tool row, for resolving parsed criterion names."""
     return {c.criteria.strip().lower(): c for c in CriteriaAppraisalTool.objects.all()}
@@ -124,7 +126,7 @@ def appraise_target(target_type: str, target_id: str, user=None, extra_guidance:
 
 def appraise_targets(targets: list[tuple[str, str]], user=None) -> dict:
     """Parallel appraisal over many targets. Concurrency capped by GEMINI_WORKERS."""
-    workers = getattr(settings, "GEMINI_WORKERS", 10)
+    workers = getattr(settings, "AGENTIC_WORKERS", 5)
     results = []
     with ThreadPoolExecutor(max_workers=workers) as pool:
         futures = [pool.submit(appraise_target, tt, tid, user) for tt, tid in targets]

@@ -1000,7 +1000,25 @@ class CriteriaGuideDocument(models.Model):
     def __str__(self):
         return f"{self.rule.criterion.criteria} — {self.label}"
 
+class CriteriaReferenceScale(models.Model):
+    """
+    Structured reference a criterion is graded against
+    """
+    id          = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    rule        = models.ForeignKey(CriteriaRule, on_delete=models.CASCADE, related_name="scales")
+    label       = models.CharField(max_length=255)             # based on package
+    source      = models.CharField(max_length=120, blank=True) # "CTCAE" | "GRADE" | "NICE", for 
+    description = models.TextField(blank=True)                 # package,, a description of this rule
+    data        = models.JSONField(default=dict, blank=True)   # the diverse structured payload
+    active      = models.BooleanField(default=True)
+    created_at  = models.DateTimeField(auto_now_add=True)
+    updated_at  = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        ordering = ["rule__criterion__criteria", "label"]
+
+    def __str__(self):
+        return f"{self.rule.criterion.criteria} — {self.label}"
 
 class DecisionTemplate(models.Model):
     id                = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -1090,7 +1108,8 @@ class PanelAppraisal(models.Model):
     # run-level outcome
     success = models.BooleanField(default=False)   
     rank = models.PositiveIntegerField(null=True, blank=True)
-
+    selected = models.BooleanField(default=False)
+    final_comments = models.TextField(null=True, blank=True) 
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -1140,15 +1159,6 @@ class AppraisalScore(models.Model):
         state = f"{self.effective_score}" if (self.ok or self.final_score is not None) else "—"
         return f"{self.criterion.criteria}: {state}"
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["criterion__criteria"]
-
-    def __str__(self):
-        state = f"{self.score}" if self.ok else "—"
-        return f"{self.criterion.criteria}: {state}"
 
 
 class AppraisalNote(models.Model):

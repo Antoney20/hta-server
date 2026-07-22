@@ -36,7 +36,7 @@ from app.core.services.feedback import FeedbackService
 from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.services import criteria_info
-from app.services.appraisal.agentic_results import bulk_delete_appraisals, bulk_delete_scores, delete_appraisal, delete_score, edit_score, get_agentic_results
+from app.services.appraisal.agentic_results import bulk_delete_appraisals, bulk_delete_scores, bulk_set_selected, clear_comment, delete_appraisal, delete_score, edit_score, get_agentic_results, select_appraisal, set_comment
 from app.services.appraisal.running import generation_status
 from app.services.appraisal.service import appraise_repeated, appraise_target, appraise_targets
 from app.services.appraisal_panel import AppraisalPanelService
@@ -2191,25 +2191,26 @@ class EvidenceCoverageViewSet(viewsets.ViewSet):
 
 class CriteriaRuleViewSet(viewsets.ViewSet):
     parser_classes = [JSONParser, MultiPartParser, FormParser]
-    ADMIN_ACTIONS = {"destroy", "delete_document"}
-    WRITE_ACTIONS = {"create", "update", "partial_update", "bulk_upsert", "add_document"}
+    ADMIN_ACTIONS = {"destroy", "delete_document", "edit_scale"}
+    WRITE_ACTIONS = {"create", "update", "partial_update", "bulk_upsert",
+                     "add_document", "add_scale"}
 
     def get_permissions(self):
         if self.action in self.ADMIN_ACTIONS: return [IsAdmin()]
         if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdmin()]
         return [IsAuthenticated()]
 
-    def list(self, request):              
+    def list(self, request):
         return _respond(rules.list_rules(request.query_params))
-    def retrieve(self, request, pk=None): 
+    def retrieve(self, request, pk=None):
         return _respond(rules.get_rule(pk))
-    def create(self, request):            
+    def create(self, request):
         return _respond(rules.create_rule(request.data))
-    def update(self, request, pk=None):   
+    def update(self, request, pk=None):
         return _respond(rules.update_rule(pk, request.data, False))
-    def partial_update(self, request, pk=None): 
+    def partial_update(self, request, pk=None):
         return _respond(rules.update_rule(pk, request.data, True))
-    def destroy(self, request, pk=None):  
+    def destroy(self, request, pk=None):
         return _respond(rules.delete_rule(pk))
 
     @action(detail=False, methods=["post"], url_path="bulk")
@@ -2224,6 +2225,16 @@ class CriteriaRuleViewSet(viewsets.ViewSet):
     def delete_document(self, request, doc_id=None):
         return _respond(rules.delete_document(doc_id))
 
+    @action(detail=True, methods=["post"], url_path="scales")
+    def add_scale(self, request, pk=None):
+        return _respond(rules.add_scale(pk, request.data))
+
+    @action(detail=False, methods=["patch", "delete"],
+            url_path=r"scales/(?P<scale_id>[^/.]+)")
+    def edit_scale(self, request, scale_id=None):
+        if request.method == "DELETE":
+            return _respond(rules.delete_scale(scale_id))
+        return _respond(rules.update_scale(scale_id, request.data))
 
 class DecisionTemplateViewSet(viewsets.ViewSet):
     ADMIN_ACTIONS = {"destroy"}
@@ -2417,7 +2428,8 @@ class AppraisalViewSet(viewsets.ViewSet):
 class AppraisalScoreViewSet(viewsets.ViewSet):
     """Results + human review — read grouped results, edit/verify/delete AI outputs."""
 
-    ADMIN_ACTIONS = {"edit", "destroy", "delete_appraisal", "bulk_delete"}
+    ADMIN_ACTIONS = { "destroy", "delete_appraisal", "bulk_delete",
+                     "select", "bulk_select"}
 
     def get_permissions(self):
         if self.action in self.ADMIN_ACTIONS:
@@ -2428,17 +2440,28 @@ class AppraisalScoreViewSet(viewsets.ViewSet):
     def list(self, request):
         data = get_agentic_results(target=request.query_params.get("target"))
         return _ok(data, f"{len(data)} target(s).")
-    
+
+
+
+
     @action(detail=True, methods=["patch"], url_path="edit")
     def edit(self, request, pk=None):
+        user = self.request.user
+        is_admin = user.has_role(UserRole.ADMIN)
+        is_panel = user.has_role(UserRole.PANEL)
+
+        if not (is_admin or is_panel):
+            return _err("Not allowed.", 403)
+
         out = edit_score(
             pk,
-            final_score=request.data.get("final_score"),
-            verified=request.data.get("verified"),
+            final_score=request.data.get("final_score") if is_admin else None,
+            verified=request.data.get("verified") if is_admin else None,
             notes=request.data.get("notes"),
         )
         return _ok(out, "Score updated.") if out else _err("Score not found.", 404)
 
+    
     # DELETE /v3/appraisal-scores/<pk>/   
     def destroy(self, request, pk=None):
         out = delete_score(pk)
@@ -2466,8 +2489,38 @@ class AppraisalScoreViewSet(viewsets.ViewSet):
             "Bulk delete complete.",
         )
 
+    @action(detail=True, methods=["patch"], url_path="select")
+    def select(self, request, pk=None):
+        out = select_appraisal(pk, selected=request.data.get("selected", True))
+        return _ok(out, "Selection updated.") if out else _err("Appraisal not found.", 404)
 
+    @action(detail=True, methods=["patch", "delete"], url_path="comment")
+    def comment(self, request, pk=None):
+        if request.method == "DELETE":
+            if not IsAdmin().has_permission(request, self):
+                return _err("Admins only.", 403)
+            out = clear_comment(pk)
+            return _ok(out, "Comment cleared.") if out else _err("Appraisal not found.", 404)
 
+        text = request.data.get("comments")
+        if text is None or not str(text).strip():
+            return _err("Provide non-empty 'comments'.", 422)
+        out = set_comment(pk, comments=text)
+        return _ok(out, "Comment saved.") if out else _err("Appraisal not found.", 404)
 
-
-
+    # DELETE /v3/appraisal-scores/<pk>/comment/   [admin]
+    # @action(detail=True, methods=["delete"], url_path="comment")
+    # def clear_comment(self, request, pk=None):
+    #     out = clear_comment(pk)
+        
+    #     return _ok(out, "Comment cleared.") if out else _err("Appraisal not found.", 404)
+    @action(detail=False, methods=["post"], url_path="bulk-select")
+    def bulk_select(self, request):
+        appraisal_ids = request.data.get("appraisal_ids") or []
+        if not appraisal_ids:
+            return _err("Provide 'appraisal_ids'.", 422)
+        return _ok(
+            bulk_set_selected(appraisal_ids, selected=request.data.get("selected", True)),
+            "Selection updated.",
+        )
+        

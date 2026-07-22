@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -846,14 +846,22 @@ class CriteriaGuideDocumentSerializer(serializers.ModelSerializer):
         return request.build_absolute_uri(obj.file.url) if request else obj.file.url
 
 
+class CriteriaReferenceScaleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CriteriaReferenceScale
+        fields = "__all__"
+        read_only_fields = ["id", "created_at", "updated_at"]
+
 class CriteriaRuleSerializer(serializers.ModelSerializer):
     documents = CriteriaGuideDocumentSerializer(many=True, read_only=True)
+    scales         = CriteriaReferenceScaleSerializer(many=True, read_only=True)
     criterion_name = serializers.CharField(source="criterion.criteria", read_only=True)
 
     class Meta:
         model = CriteriaRule
         fields = "__all__"
         read_only_fields = ("id", "created_at", "updated_at")
+
 
 
 class DecisionTemplateCriterionSerializer(serializers.ModelSerializer):
@@ -934,7 +942,6 @@ class AppraisalScoreSerializer(serializers.ModelSerializer):
         fields = ["id", "criterion", "criterion_name", "ok", "score",
                   "reasoning", "failure_reason", "created_at"]
 
-
 class PanelAppraisalSerializer(serializers.ModelSerializer):
     """Thin list row."""
     target_type = serializers.CharField(read_only=True)
@@ -944,8 +951,10 @@ class PanelAppraisalSerializer(serializers.ModelSerializer):
     class Meta:
         model = PanelAppraisal
         fields = ["id", "target_type", "target_name", "reference_number",
+                  "selected", "final_comments",
                   "intervention", "national_proposal",
-                  "success",  "rank", "created_at"]
+                  "success", "rank", "created_at"]
+        read_only_fields = ["selected", "final_comments"]  
 
     def get_target_name(self, obj):
         t = obj.target
@@ -953,8 +962,6 @@ class PanelAppraisalSerializer(serializers.ModelSerializer):
 
     def get_reference_number(self, obj):
         return getattr(obj.target, "reference_number", None)
-
-
 class AppraisalRunSerializer(serializers.ModelSerializer):
     class Meta:
         model = AppraisalRun
