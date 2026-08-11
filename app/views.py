@@ -48,7 +48,7 @@ from app.services.evidence import AssessmentEvidenceService
 from app.services.lookup import ProposalLookupService as lookup
 from app.services.phase import InterventionPhaseService
 from app.services.program import InterventionPackageService
-from app.services.public_view import PublicProposalService
+from app.services.public_view import PublicProgramService, PublicProposalService
 from app.services.scoring_p import bulk_create_scores, get_scores_for_user
 from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
@@ -1090,6 +1090,15 @@ class PublicProposalViewSet(ViewSet):
     def list(self, request):
         return Response(PublicProposalService.fetch())
 
+class PublicProgramViewSet(ViewSet):
+    permission_classes = [AllowAny]
+
+    def list(self, request):
+        return Response(PublicProgramService.fetch_programs())
+
+    @action(detail=False, methods=["get"], url_path="proposals")
+    def proposals(self, request):
+        return Response(PublicProgramService.fetch_proposals())
 
 def _can_manage(user) -> bool:
     return user.role in (UserRole.ADMIN, UserRole.SECRETARIAT)

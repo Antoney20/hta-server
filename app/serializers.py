@@ -298,6 +298,30 @@ class PublicProposalSerializer(serializers.ModelSerializer):
         return obj.justification or "No justification provided"
     
     
+class PublicProgramSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = NationalProgram
+        fields = ["id", "name", "code", "description", "field_schema"]
+
+
+class PublicProgramProposalSerializer(serializers.ModelSerializer):
+    program_name = serializers.CharField(source="program.name", read_only=True)
+    program_code = serializers.CharField(source="program.code", read_only=True)
+
+    class Meta:
+        model = NationalProgramProposal
+        fields = [
+            "id",
+            "reference_number",
+            "title",
+            "justification",
+            "data",
+            "program",
+            "program_name",
+            "program_code",
+            "submitted_date",
+        ]
+    
 class DecisionTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = DecisionType

@@ -27,6 +27,7 @@ from .views import (
     InterventionPhaseViewSet,
     NationalProgramProposalViewSet,
     NationalProgramViewSet,
+    PublicProgramViewSet,
     PublicProposalViewSet,
     ScoringReportView,
     SelectionToolViewSet,
@@ -51,6 +52,7 @@ router.register(r"criteria-information", CriteriaInformationViewSet, basename="c
 router.register("intervention-scores", InterventionScoreViewSet, basename="intervention-score")
 router.register(r"admin-report", AdminScoreViewSet, basename="admin-report")
 router.register(r"proposals",  PublicProposalViewSet, basename="public-proposals")
+router.register(r"public-programs", PublicProgramViewSet, basename="public-programs")
 # router.register(r"re-open", InterventionProposalViewSet, basename="scoring-reopen")
 router.register(r"topic-priority", TopicPriorityViewSet, basename="topic-priority")
 router.register(r"decision-types", DecisionTypeViewSet, basename="decision-type")

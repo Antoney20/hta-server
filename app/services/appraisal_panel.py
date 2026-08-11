@@ -1,3 +1,7 @@
+from collections import Counter
+
+from django.db import IntegrityError
+
 from app.models import CriteriaAppraisalTool, CriterionEvidence, InterventionProposal, NationalProgramProposal
 from app.serializers import CriteriaAppraisalToolSerializer, CriterionEvidenceSerializer
 
@@ -99,18 +103,40 @@ class AppraisalPanelService:
         return _ok(CriterionEvidenceSerializer(qs, many=True).data)
 
     @staticmethod
-    def _upsert_evidence(row):
+    def _prepare_evidence(row):
+        """Shared validation for both upsert and insert paths."""
         criterion = _get_or_404(CriteriaAppraisalTool, row.get("criterion"))
-        if not criterion: return None, "criterion not found"
+        if not criterion: return None, None, "criterion not found"
         target, err = AppraisalPanelService._resolve_target(row)
+        if err: return None, None, err
+        if err := AppraisalPanelService._validate_evidence_data(criterion, row.get("data") or {}):
+            return None, None, err
+        return criterion, target, None
+
+    @staticmethod
+    def _upsert_evidence(row):
+        """One record per (criterion, target): update in place, or create if absent."""
+        criterion, target, err = AppraisalPanelService._prepare_evidence(row)
         if err: return None, err
-        data = row.get("data") or {}
-        if err := AppraisalPanelService._validate_evidence_data(criterion, data):
-            return None, err
         obj, _ = CriterionEvidence.objects.update_or_create(
             criterion=criterion, **target,
-            defaults={"data": data, "score": row.get("score")},
+            defaults={"data": row.get("data") or {}, "score": row.get("score")},
         )
+        return obj, None
+
+    @staticmethod
+    def _insert_evidence(row):
+        """Always create a fresh record — used when a target is intentionally duplicated."""
+        criterion, target, err = AppraisalPanelService._prepare_evidence(row)
+        if err: return None, err
+        try:
+            obj = CriterionEvidence.objects.create(
+                criterion=criterion, **target,
+                data=row.get("data") or {}, score=row.get("score"),
+            )
+        except IntegrityError:
+            return None, ("duplicate blocked by a unique constraint on (criterion, target); "
+                          "drop it via migration to allow duplicate evidence rows")
         return obj, None
 
     @staticmethod
@@ -139,8 +165,22 @@ class AppraisalPanelService:
     @staticmethod
     def bulk_upload_evidence(rows):
         if not isinstance(rows, list): return _err("expected a list of rows")
+
+        # how many rows in THIS upload target the same (criterion, intervention/national_proposal)
+        def _key(r):
+            return (r.get("criterion"), r.get("intervention"), r.get("national_proposal"))
+        counts = Counter(_key(r) for r in rows)
+
         created, updated, failed = 0, 0, []
         for i, row in enumerate(rows):
+            if counts[_key(row)] > 1:
+                # 2+ rows for one target in the same file → each becomes its own new row
+                obj, err = AppraisalPanelService._insert_evidence(row)
+                if err: failed.append({"row": i, "error": err})
+                else: created += 1
+                continue
+
+            # single occurrence → upsert so re-uploads stay idempotent
             existed = CriterionEvidence.objects.filter(
                 criterion=row.get("criterion"),
                 intervention=row.get("intervention"),
@@ -157,4 +197,3 @@ class AppraisalPanelService:
         if not isinstance(ids, list): return _err("expected a list of ids")
         n, _ = CriterionEvidence.objects.filter(id__in=ids).delete()
         return _ok({"deleted": n})
-    

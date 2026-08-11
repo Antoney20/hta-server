@@ -203,33 +203,49 @@ class EvidenceCoverageService:
 
         groups, id_to_key = EvidenceCoverageService._grouped_criteria()
 
-        # collapse this target's evidence bands into one row per group
+        # keep EVERY evidence row per group (duplicates preserved), fullest first
         ev_by_group = {}
         for e in ev_qs:
             gkey = id_to_key.get(e.criterion_id)
             if gkey is None:
                 continue
-            existing = ev_by_group.get(gkey)
-            if existing is None or len(e.data or {}) > len(existing.data or {}):
-                ev_by_group[gkey] = e
+            ev_by_group.setdefault(gkey, []).append(e)
+        for gkey in ev_by_group:
+            ev_by_group[gkey].sort(key=lambda e: len(e.data or {}), reverse=True)
 
         per_criterion = []
         counts = {"complete": 0, "incomplete": 0, "empty": 0, "missing": 0}
         for g in groups:
-            e = ev_by_group.get(g["key"])
-            status, filled, total = EvidenceCoverageService._grade(e, g["header_keys"])
+            evs = ev_by_group.get(g["key"], [])
+            primary = evs[0] if evs else None   # fullest record drives the summary + coverage
+            status, filled, total = EvidenceCoverageService._grade(primary, g["header_keys"])
             counts[status] += 1
+
+            # every record for this criterion, graded individually — len > 1 ⇒ duplicates
+            instances = []
+            for e in evs:
+                st, fl, tt = EvidenceCoverageService._grade(e, g["header_keys"])
+                instances.append({
+                    "evidence_id": str(e.id),
+                    "data": e.data or {},
+                    "score": e.score,
+                    "status": st,
+                    "filled": fl,
+                    "total": tt,
+                })
+
             per_criterion.append({
                 "criterion": g["key"],
                 "criterion_id": str(g["ids"][0]), 
                 "criterion_name": g["name"],
                 "headers": g["headers"],
-                "evidence_id": str(e.id) if e else None,
-                "data": e.data if e else {},
-                "score": e.score if e else None,
+                "evidence_id": str(primary.id) if primary else None,
+                "data": primary.data if primary else {},
+                "score": primary.score if primary else None,
                 "status": status,
                 "filled": filled,
                 "total": total,
+                "instances": instances,
             })
 
         total_c = len(groups) or 1
