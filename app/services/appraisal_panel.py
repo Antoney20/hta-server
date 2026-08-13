@@ -268,7 +268,11 @@ class AppraisalPanelService:
             return _err(err)
         s = CriteriaAppraisalToolSerializer(obj, data=payload, partial=partial)
         if not s.is_valid(): return _err(s.errors)
+        # s.save()
+        # return _ok(s.data)
         s.save()
+        if "headers" in payload:  # configure_criterion: `if "headers" in clean:`
+            AppraisalPanelService._recompute_criterion(s.instance)
         return _ok(s.data)
 
     @staticmethod
@@ -282,7 +286,11 @@ class AppraisalPanelService:
             return _err(err)
         s = CriteriaAppraisalToolSerializer(obj, data=clean, partial=True)
         if not s.is_valid(): return _err(s.errors)
+        # s.save()
+        # return _ok(s.data)
         s.save()
+        if "headers" in payload:  # configure_criterion: `if "headers" in clean:`
+            AppraisalPanelService._recompute_criterion(s.instance)
         return _ok(s.data)
 
     @staticmethod
@@ -350,10 +358,31 @@ class AppraisalPanelService:
         obj.save()
         return obj, None
 
+    # @staticmethod
+    # def create_evidence(payload):
+    #     obj, err = AppraisalPanelService._upsert_evidence(payload)
+    #     return _err(err) if err else _ok(CriterionEvidenceSerializer(obj).data, 201)
+
+    # @staticmethod
+    # def update_evidence(pk, payload, partial):
+    #     obj = _get_or_404(CriterionEvidence, pk)
+    #     if not obj: return _err("not found", 404)
+    #     if "data" in payload and (err := AppraisalPanelService._validate_evidence_data(obj.criterion, payload["data"])):
+    #         return _err(err)
+    #     s = CriterionEvidenceSerializer(obj, data=payload, partial=partial)
+    #     if not s.is_valid(): return _err(s.errors)
+    #     s.save()
+        # return _ok(s.data)
     @staticmethod
     def create_evidence(payload):
         obj, err = AppraisalPanelService._upsert_evidence(payload)
-        return _err(err) if err else _ok(CriterionEvidenceSerializer(obj).data, 201)
+        if err:
+            return _err(err)
+        AppraisalPanelService._recompute_target(
+            intervention_id=obj.intervention_id,
+            national_proposal_id=obj.national_proposal_id)
+        obj.refresh_from_db()
+        return _ok(CriterionEvidenceSerializer(obj).data, 201)
 
     @staticmethod
     def update_evidence(pk, payload, partial):
@@ -364,7 +393,11 @@ class AppraisalPanelService:
         s = CriterionEvidenceSerializer(obj, data=payload, partial=partial)
         if not s.is_valid(): return _err(s.errors)
         s.save()
-        return _ok(s.data)
+        AppraisalPanelService._recompute_target(
+            intervention_id=obj.intervention_id,
+            national_proposal_id=obj.national_proposal_id)
+        obj.refresh_from_db()
+        return _ok(CriterionEvidenceSerializer(obj).data)
 
     @staticmethod
     def delete_evidence(pk):
@@ -404,6 +437,11 @@ class AppraisalPanelService:
                     _, err = AppraisalPanelService._insert_evidence(row)
                     if err: failed.append({"row": i, "error": err})
                     else: created += 1
+        # return _ok({"created": created, "updated": updated, "failed": failed})
+        # recompute formula fields for every target this upload touched
+        for iv, npr in {(g[1], g[2]) for g in groups.keys()}:
+            AppraisalPanelService._recompute_target(intervention_id=iv, national_proposal_id=npr)
+
         return _ok({"created": created, "updated": updated, "failed": failed})
 
     @staticmethod
@@ -411,3 +449,85 @@ class AppraisalPanelService:
         if not isinstance(ids, list): return _err("expected a list of ids")
         n, _ = CriterionEvidence.objects.filter(id__in=ids).delete()
         return _ok({"deleted": n})
+    
+    
+    @staticmethod
+    def _recompute_target(*, intervention_id=None, national_proposal_id=None, max_passes=8):
+        """Recompute every formula field for all of a target's rows, iterated to
+        a fixpoint so cross-criterion chains settle. Persists only changed rows."""
+        from app.services.appraisal.formulas import compute_row, _num  
+        flt = {}
+        if intervention_id is not None:      flt["intervention_id"] = intervention_id
+        if national_proposal_id is not None: flt["national_proposal_id"] = national_proposal_id
+        if not flt:
+            return []
+
+        rows = list(
+            CriterionEvidence.objects.filter(**flt)
+            .select_related("criterion").order_by("created_at", "id")
+        )
+        work = [r for r in rows
+                if any((h or {}).get("formula") for h in (r.criterion.headers or []))]
+        if not work:
+            return []
+
+        # oldest row per criterion name is the representative for cross-criterion refs
+        rep = {}
+        for r in rows:
+            rep.setdefault((r.criterion.criteria or "").strip().lower(), r)
+
+        def ref(name, key, default=0):
+            r = rep.get(str(name).strip().lower())
+            if not r:
+                return float(default)
+            v = (r.data or {}).get(key)
+            if v in (None, ""):
+                return float(default)
+            try:
+                return _num(v)
+            except Exception:  # noqa: BLE001
+                return float(default)
+
+        original = {r.id: dict(r.data or {}) for r in work}
+        for _ in range(max_passes):
+            changed = False
+            for r in work:
+                new_data, _err = compute_row(r.criterion.headers or [], r.data or {}, ref)
+                if new_data != (r.data or {}):
+                    r.data = new_data
+                    changed = True
+            if not changed:
+                break
+
+        saved = []
+        for r in work:
+            if (r.data or {}) != original.get(r.id, {}):
+                r.save(update_fields=["data", "updated_at"])
+                saved.append(str(r.id))
+        return saved
+
+    @staticmethod
+    def _recompute_criterion(criterion):
+        if not any((h or {}).get("formula") for h in (criterion.headers or [])):
+            return []
+        pairs = (CriterionEvidence.objects.filter(criterion=criterion)
+                 .values_list("intervention_id", "national_proposal_id").distinct())
+        touched = []
+        for iv, npr in pairs:
+            touched += AppraisalPanelService._recompute_target(
+                intervention_id=iv, national_proposal_id=npr)
+        return touched
+
+    @staticmethod
+    def recompute(payload):
+        crit = payload.get("criterion")
+        if crit:
+            obj = _get_or_404(CriteriaAppraisalTool, crit)
+            if not obj:
+                return _err("criterion not found", 404)
+            return _ok({"recomputed": AppraisalPanelService._recompute_criterion(obj)})
+        iv, npr = payload.get("intervention"), payload.get("national_proposal")
+        if iv or npr:
+            return _ok({"recomputed": AppraisalPanelService._recompute_target(
+                intervention_id=iv, national_proposal_id=npr)})
+        return _err("provide criterion or a target")

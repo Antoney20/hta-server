@@ -2159,7 +2159,7 @@ class CriteriaViewSet(viewsets.ViewSet):
 
 class EvidenceViewSet(viewsets.ViewSet):
     ADMIN_ACTIONS = {"destroy", "bulk_delete"}
-    WRITE_ACTIONS = {"create", "update", "partial_update", "bulk_upload"}
+    WRITE_ACTIONS = {"create", "update", "partial_update", "bulk_upload", "recompute"}
 
     def get_permissions(self):
         if self.action in self.ADMIN_ACTIONS: 
@@ -2182,6 +2182,10 @@ class EvidenceViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["post"], url_path="bulk-upload")
     def bulk_upload(self, request):       
         return _respond(AppraisalPanelService.bulk_upload_evidence(request.data.get("rows", request.data)))
+    
+    @action(detail=False, methods=["post"], url_path="recompute")
+    def recompute(self, request):
+        return _respond(AppraisalPanelService.recompute(request.data))
 
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):       
