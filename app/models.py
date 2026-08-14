@@ -1282,6 +1282,75 @@ class BenefitPackage(models.Model):
     def __str__(self):
         return f"{self.name} · {self.fund}"
 
+
+class ProposedBenefitPackage(models.Model):
+    """Proposed package stage. Same shape as BenefitPackage; `items` holds the
+    proposed intervention set, so intervention↔package grouping lives in `items`."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, db_index=True)
+    fund = models.CharField(max_length=160, blank=True, db_index=True)
+    data = models.JSONField(default=dict, blank=True)
+    items = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["fund", "name"]
+        indexes = [models.Index(fields=["fund", "name"])]
+
+    def __str__(self):
+        return f"{self.name} · {self.fund}"
+
+
+class RevisedBenefitPackage(models.Model):
+    """Revised package stage — post-appraisal / post-decision. Same shape."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, db_index=True)
+    fund = models.CharField(max_length=160, blank=True, db_index=True)
+    data = models.JSONField(default=dict, blank=True)
+    items = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["fund", "name"]
+        indexes = [models.Index(fields=["fund", "name"])]
+
+    def __str__(self):
+        return f"{self.name} · {self.fund}"
+
+
+class SwgPrioritizedList(models.Model):
+    """SWG-prioritised topics that proceed to the panel. Rows kept as flexible
+    JSON so the list tracks evolving SWG spreadsheet columns without migrations.
+
+    Suggested (unenforced) `items` row:
+        {
+            "ref": "INTERV-2026-03-23-0005",
+            "intervention": "High-risk antenatal mothers ...",
+            "package": "Maternity, Neonatal and Child Health Services",
+            "justification": "...",
+            "next_steps": "Rapid Assessment for tariff determination",
+            "decision": "",            # include | exclude | ""
+            "service_type": "",
+            "package_access": "",
+            "hta_type": "rapid",       # rapid | full
+        }
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, db_index=True)
+    cycle = models.CharField(max_length=120, blank=True, db_index=True)
+    data = models.JSONField(default=dict, blank=True)     # meta / header
+    items = models.JSONField(default=list, blank=True)    # prioritised rows
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
+
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
 auditlog.register(InterventionSystemCategory)

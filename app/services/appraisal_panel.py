@@ -702,3 +702,4 @@ class AppraisalPanelService:
             return _ok({"recomputed": AppraisalPanelService._recompute_target(
                 intervention_id=iv, national_proposal_id=npr)})
         return _err("provide criterion or a target")
+    

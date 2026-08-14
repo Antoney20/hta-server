@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal,  SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -822,6 +822,23 @@ class BenefitPackageSerializer(serializers.ModelSerializer):
         fields = "__all__"
         read_only_fields = ("id", "created_at", "updated_at")
 
+
+class SwgPrioritizedListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = SwgPrioritizedList
+        fields = "__all__"
+
+
+class ProposedBenefitPackageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ProposedBenefitPackage
+        fields = "__all__"
+
+
+class RevisedBenefitPackageSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = RevisedBenefitPackage
+        fields = "__all__"
 
 
 # 

@@ -27,11 +27,14 @@ from .views import (
     InterventionPhaseViewSet,
     NationalProgramProposalViewSet,
     NationalProgramViewSet,
+    ProposedPackageViewSet,
     PublicProgramViewSet,
     PublicProposalViewSet,
+    RevisedPackageViewSet,
     ScoringReportView,
     SelectionToolViewSet,
     SubActivityViewSet,
+    SwgPrioritizedViewSet,
     SystemCategoryViewSet,
     InterventionSystemCategoryViewSet,
     InterventionScoreViewSet,
@@ -83,6 +86,10 @@ router.register("ai-keys", AIProviderKeyViewSet, basename="ai-keys")
 router.register("ai-models", AIModelViewSet, basename="ai-models")
 router.register("appraisals", AppraisalViewSet, basename="appraisals")
 router.register(r"appraisal-scores", AppraisalScoreViewSet, basename="appraisal-score")
+# 
+router.register(r"swg", SwgPrioritizedViewSet, basename="swg")
+router.register(r"proposed-packages", ProposedPackageViewSet, basename="proposed-packages")
+router.register(r"revised-packages", RevisedPackageViewSet, basename="revised-packages")
 
 
 # urlpatterns = router.urls
