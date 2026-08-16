@@ -27,6 +27,7 @@ from .views import (
     InterventionPhaseViewSet,
     NationalProgramProposalViewSet,
     NationalProgramViewSet,
+    PanelAppraisedViewSet,
     ProposedPackageViewSet,
     PublicProgramViewSet,
     PublicProposalViewSet,
@@ -88,6 +89,7 @@ router.register("appraisals", AppraisalViewSet, basename="appraisals")
 router.register(r"appraisal-scores", AppraisalScoreViewSet, basename="appraisal-score")
 # 
 router.register(r"swg", SwgPrioritizedViewSet, basename="swg")
+router.register(r"appraised-lists", PanelAppraisedViewSet, basename="appraised-list")
 router.register(r"proposed-packages", ProposedPackageViewSet, basename="proposed-packages")
 router.register(r"revised-packages", RevisedPackageViewSet, basename="revised-packages")
 

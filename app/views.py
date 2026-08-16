@@ -37,6 +37,7 @@ from app.core.emails.activity import send_activity_assignment_emails
 from app.core.services.national import NationalProgramService, ProgramProposalService
 from app.services import criteria_info
 from app.services.appraisal.agentic_results import bulk_delete_appraisals, bulk_delete_scores, bulk_set_selected, clear_comment, delete_appraisal, delete_score, edit_score, get_agentic_results, select_appraisal, set_comment
+from app.services.appraisal.appraisal_report import AppraisedListService
 from app.services.appraisal.benefits_package import ProposedPackageService, RevisedPackageService, SwgListService
 from app.services.appraisal.running import generation_status
 from app.services.appraisal.service import appraise_repeated, appraise_target, appraise_targets
@@ -2172,6 +2173,30 @@ class SwgPrioritizedViewSet(viewsets.ViewSet):
         return bp_respond(SwgListService.update(pk, request.data, True))
     def destroy(self, request, pk=None):
         return bp_respond(SwgListService.delete(pk))
+
+class PanelAppraisedViewSet(viewsets.ViewSet):
+    ADMIN_ACTIONS = {"destroy"}
+    WRITE_ACTIONS = {"create", "update", "partial_update"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS:
+            return [IsAdmin()]
+        if self.action in self.WRITE_ACTIONS:
+            return [IsSecretariatOrAdmin()]
+        return [IsAuthenticated()]
+
+    def list(self, request):
+        return bp_respond(AppraisedListService.list(request.query_params))
+    def retrieve(self, request, pk=None):
+        return bp_respond(AppraisedListService.get(pk))
+    def create(self, request):
+        return bp_respond(AppraisedListService.create(request.data))
+    def update(self, request, pk=None):
+        return bp_respond(AppraisedListService.update(pk, request.data, False))
+    def partial_update(self, request, pk=None):
+        return bp_respond(AppraisedListService.update(pk, request.data, True))
+    def destroy(self, request, pk=None):
+        return bp_respond(AppraisedListService.delete(pk))
 
 
 class ProposedPackageViewSet(viewsets.ViewSet):

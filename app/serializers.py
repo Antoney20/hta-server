@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, PanelAppraisedList, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -828,6 +828,11 @@ class SwgPrioritizedListSerializer(serializers.ModelSerializer):
         model = SwgPrioritizedList
         fields = "__all__"
 
+
+class PanelAppraisedListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PanelAppraisedList
+        fields = "__all__"
 
 class ProposedBenefitPackageSerializer(serializers.ModelSerializer):
     class Meta:

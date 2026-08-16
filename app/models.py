@@ -1350,6 +1350,39 @@ class SwgPrioritizedList(models.Model):
 
     def __str__(self):
         return self.name
+    
+    
+class PanelAppraisedList(models.Model):
+    """Panel-appraised interventions — the post-appraisal counterpart to
+    SwgPrioritizedList. Same flexible-JSON shape so the list tracks evolving
+    panel/decision columns without migrations.
+
+    Suggested (unenforced) `items` row:
+        {
+            "ref": "INTERV-2026-03-23-0005",
+            "intervention": "High-risk antenatal mothers ...",
+            "package": "Maternity, Neonatal and Child Health Services",
+            "phase": "",              # intervention phase / package
+            "score": "",              # aggregate deterministic score
+            "recommendation": "",     # include | exclude | conditional | ""
+            "rationale": "",
+            "conditions": "",         # any conditions attached to inclusion
+            "decision": "",           # include | exclude | ""
+            "hta_type": "rapid",      # rapid | full
+        }
+    """
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=200, db_index=True)
+    data = models.JSONField(default=dict, blank=True)    
+    items = models.JSONField(default=list, blank=True)    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return self.name
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
