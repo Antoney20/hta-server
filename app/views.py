@@ -38,7 +38,7 @@ from app.core.services.national import NationalProgramService, ProgramProposalSe
 from app.services import criteria_info
 from app.services.appraisal.agentic_results import bulk_delete_appraisals, bulk_delete_scores, bulk_set_selected, clear_comment, delete_appraisal, delete_score, edit_score, get_agentic_results, select_appraisal, set_comment
 from app.services.appraisal.appraisal_report import AppraisedListService
-from app.services.appraisal.benefits_package import ProposedPackageService, RevisedPackageService, SwgListService
+from app.services.appraisal.benefits_package import SwgListService
 from app.services.appraisal.running import generation_status
 from app.services.appraisal.service import appraise_repeated, appraise_target, appraise_targets
 from app.services.appraisal_panel import AppraisalPanelService
@@ -2199,57 +2199,52 @@ class PanelAppraisedViewSet(viewsets.ViewSet):
         return bp_respond(AppraisedListService.delete(pk))
 
 
-class ProposedPackageViewSet(viewsets.ViewSet):
-    ADMIN_ACTIONS = {"destroy"}
-    WRITE_ACTIONS = {"create", "update", "partial_update",
-                     "set_decision", "build_from_swg", "promote"}
 
-    def get_permissions(self):
-        if self.action in self.ADMIN_ACTIONS:
-            return [IsAdmin()]
-        if self.action in self.WRITE_ACTIONS:
-            return [IsSecretariatOrAdmin()]
-        return [IsAuthenticated()]
+# class PanelAppraisedViewSet(viewsets.ViewSet):
+#     ADMIN_ACTIONS = {"destroy"}
+#     WRITE_ACTIONS = {"create", "update", "partial_update",
+#                      "set_decision", "build_revised"}
 
-    def list(self, request):
-        return bp_respond(ProposedPackageService.list(request.query_params))
-    def retrieve(self, request, pk=None):
-        return bp_respond(ProposedPackageService.get(pk))
-    def create(self, request):
-        return bp_respond(ProposedPackageService.create(request.data))
-    def update(self, request, pk=None):
-        return bp_respond(ProposedPackageService.update(pk, request.data, False))
-    def partial_update(self, request, pk=None):
-        return bp_respond(ProposedPackageService.update(pk, request.data, True))
-    def destroy(self, request, pk=None):
-        return bp_respond(ProposedPackageService.delete(pk))
+#     def get_permissions(self):
+#         if self.action in self.ADMIN_ACTIONS:
+#             return [IsAdmin()]
+#         if self.action in self.WRITE_ACTIONS:
+#             return [IsSecretariatOrAdmin()]
+#         return [IsAuthenticated()]
 
-    @action(detail=False, methods=["get"], url_path="overview")
-    def overview(self, request):
-        return bp_respond(ProposedPackageService.overview(request.query_params))
+#     def list(self, request):
+#         return bp_respond(AppraisedListService.list(request.query_params))
+#     def retrieve(self, request, pk=None):
+#         return bp_respond(AppraisedListService.get(pk))
+#     def create(self, request):
+#         return bp_respond(AppraisedListService.create(request.data))
+#     def update(self, request, pk=None):
+#         return bp_respond(AppraisedListService.update(pk, request.data, False))
+#     def partial_update(self, request, pk=None):
+#         return bp_respond(AppraisedListService.update(pk, request.data, True))
+#     def destroy(self, request, pk=None):
+#         return bp_respond(AppraisedListService.delete(pk))
 
-    @action(detail=True, methods=["post"], url_path="decision")
-    def set_decision(self, request, pk=None):
-        return bp_respond(ProposedPackageService.set_decision(pk, request.data))
+#     @action(detail=True, methods=["post"], url_path="decision")
+#     def set_decision(self, request, pk=None):
+#         return bp_respond(AppraisedListService.set_decision(pk, request.data))
 
-    @action(detail=False, methods=["post"], url_path="build-from-swg")
-    def build_from_swg(self, request):
-        return bp_respond(ProposedPackageService.build_from_swg(request.data))
-
-    @action(detail=True, methods=["post"], url_path="promote")
-    def promote(self, request, pk=None):
-        return bp_respond(ProposedPackageService.promote(pk))
+#     @action(detail=True, methods=["post"], url_path="build-revised")
+#     def build_revised(self, request, pk=None):
+#         return bp_respond(AppraisedListService.build_revised(pk, request.data))
 
 
 class RevisedPackageViewSet(viewsets.ViewSet):
     def get_permissions(self):
         return [IsAuthenticated()]
+
     def list(self, request):
-        return bp_respond(RevisedPackageService.list(request.query_params))
+        return bp_respond(AppraisedListService.list_revised(request.query_params))
+
     def retrieve(self, request, pk=None):
-        return bp_respond(RevisedPackageService.get(pk))
-    
-    
+        return bp_respond(AppraisedListService.get_revised(pk))
+
+
 class CriteriaViewSet(viewsets.ViewSet):
     ADMIN_ACTIONS = {"destroy"}
     WRITE_ACTIONS = {"create", "update", "partial_update", "panel"}
