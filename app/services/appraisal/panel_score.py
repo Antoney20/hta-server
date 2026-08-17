@@ -51,6 +51,77 @@ class PanelScoreService:
         return _ok(PanelAppraisalScoreSerializer(obj).data) if obj else _err("not found", 404)
 
     @staticmethod
+    def scores_summary(params):
+        """One row per scored unit (target + service): distinct reviewer count,
+        target/service/phase for display, and each reviewer's scores nested —
+        score id, criterion name, chosen option's scoring_approach, points, notes."""
+        qs = (PanelAppraisalScore.objects
+              .select_related("intervention", "national_proposal",
+                              "intervention__phase", "national_proposal__phase",
+                              "intervention__package", "national_proposal__package",
+                              "criteria", "reviewer"))
+
+        for f in ("intervention", "national_proposal"):
+            if v := params.get(f):
+                qs = qs.filter(**{f: v})
+        if (svc := params.get("service")) is not None and svc != "":
+            qs = qs.filter(service_key=PanelAppraisalScore.make_service_key(svc))
+
+        buckets = {}
+        for s in qs:
+            tid = s.national_proposal_id or s.intervention_id
+            if not tid:
+                continue
+            key = (str(tid), s.service_key or "")
+            b = buckets.get(key)
+            if not b:
+                target = s.national_proposal or s.intervention
+                phase = getattr(target, "phase", None)
+                pkg = getattr(target, "package", None)
+                b = {
+                    "target_id": str(tid),
+                    "target_type": "national_proposal" if s.national_proposal_id else "intervention",
+                    "intervention": (getattr(target, "intervention_name", None)
+                                     or getattr(target, "title", None) or ""),
+                    "reference_number": getattr(target, "reference_number", None),
+                    "service": s.service or "",
+                    "phase": getattr(phase, "name", None) if phase else None,
+                    "package": getattr(pkg, "name", None) if pkg else None,
+                    "_reviewers": set(),
+                    "scores": [],
+                }
+                buckets[key] = b
+
+            b["_reviewers"].add(s.reviewer_id)
+            crit = s.criteria  # the chosen CriteriaAppraisalTool option row
+            sc = s.score if isinstance(s.score, dict) else {}
+            b["scores"].append({
+                "id": str(s.id),
+                "reviewer_id": s.reviewer_id,
+                "reviewer_name": getattr(s.reviewer, "username", ""),
+                "criteria_id": str(s.criteria_id) if s.criteria_id else None,
+                "criteria_name": getattr(crit, "criteria", "") if crit else "",
+                "scoring_approach": getattr(crit, "scoring_approach", "") if crit else "",
+                "score": sc.get("value"),
+                "criteria_label": sc.get("criteria_label"),
+                "comment": s.comment or "",
+                "created_at": s.created_at.isoformat() if s.created_at else None,
+            })
+
+        rows = []
+        for b in buckets.values():
+            b["reviewers_scored"] = len(b.pop("_reviewers"))
+            rows.append(b)
+
+        if pkg := params.get("package"):
+            rows = [r for r in rows if r["package"] == pkg]
+        if ph := params.get("phase"):
+            rows = [r for r in rows if r["phase"] == ph]
+
+        rows.sort(key=lambda r: (r["intervention"] or "", r["service"] or ""))
+        return _ok({"count": len(rows), "rows": rows})
+
+    @staticmethod
     def _upsert(row, reviewer):
         """One record per (reviewer, target, criteria, service_key): update in
         place, or create if absent. Duplicates across services survive because
@@ -117,4 +188,29 @@ class PanelScoreService:
         if not isinstance(ids, list):
             return _err("expected a list of ids")
         n, _ = PanelAppraisalScore.objects.filter(id__in=ids).delete()
+        return _ok({"deleted": n})
+
+    @staticmethod
+    def delete_for_units(units):
+        """Delete every score row under the given scored units. Each unit is
+        {target_type, target_id, service}. Mirrors the report's unit grouping so
+        an admin can wipe a whole unit's scores in one call, without the client
+        having to enumerate individual score ids."""
+        if not isinstance(units, list):
+            return _err("expected a list of units")
+        from django.db.models import Q
+        q = Q()
+        touched = 0
+        for u in units:
+            tid = u.get("target_id")
+            if not tid:
+                continue
+            ttype = u.get("target_type")
+            field = "national_proposal_id" if ttype == "national_proposal" else "intervention_id"
+            svc_key = PanelAppraisalScore.make_service_key(u.get("service") or "")
+            q |= Q(**{field: tid, "service_key": svc_key})
+            touched += 1
+        if not touched:
+            return _ok({"deleted": 0})
+        n, _ = PanelAppraisalScore.objects.filter(q).delete()
         return _ok({"deleted": n})

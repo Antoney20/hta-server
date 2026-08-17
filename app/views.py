@@ -2404,8 +2404,14 @@ def _resp(result):
     return Response({"detail": result.get("error")}, status=result.get("status", 400))
 
 
+
 class PanelAppraisalScoreViewSet(viewsets.ViewSet):
-    permission_classes = [IsAuthenticated]
+    ADMIN_ACTIONS = {"destroy", "bulk_delete", "delete_units"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS:
+            return [IsAdmin()]
+        return [IsAuthenticated()]
 
     def list(self, request):
         return _resp(PanelScoreService.list_scores(request.query_params))
@@ -2422,6 +2428,10 @@ class PanelAppraisalScoreViewSet(viewsets.ViewSet):
     def partial_update(self, request, pk=None):
         return _resp(PanelScoreService.update_score(pk, request.data, request.user, partial=True))
 
+    @action(detail=False, methods=["get"], url_path="summary")
+    def summary(self, request):
+        return _resp(PanelScoreService.scores_summary(request.query_params))
+
     def destroy(self, request, pk=None):
         return _resp(PanelScoreService.delete_score(pk))
 
@@ -2432,6 +2442,10 @@ class PanelAppraisalScoreViewSet(viewsets.ViewSet):
     @action(detail=False, methods=["post"], url_path="bulk-delete")
     def bulk_delete(self, request):
         return _resp(PanelScoreService.bulk_delete(request.data.get("ids", [])))
+
+    @action(detail=False, methods=["post"], url_path="delete-units")
+    def delete_units(self, request):
+        return _resp(PanelScoreService.delete_for_units(request.data.get("units", [])))
 
 class AIProviderKeyViewSet(viewsets.ModelViewSet):
     """Manage provider API keys. Admin only. Keys are write-only in output."""
