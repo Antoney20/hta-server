@@ -27,6 +27,7 @@ from .views import (
     InterventionPhaseViewSet,
     NationalProgramProposalViewSet,
     NationalProgramViewSet,
+    PanelAppraisalScoreViewSet,
     PanelAppraisedViewSet,
     # ProposedPackageViewSet,
     PublicProgramViewSet,
@@ -81,6 +82,8 @@ router.register("evidence", EvidenceViewSet, basename="evidence")
 router.register("evidence-coverage", EvidenceCoverageViewSet, basename="evidence-coverage")
 router.register("criteria-rules", CriteriaRuleViewSet, basename="criteria-rules")
 router.register("decision-templates", DecisionTemplateViewSet, basename="decision-templates")
+#panel score
+router.register(r"panel-scores", PanelAppraisalScoreViewSet, basename="panel-score")
 
 #agentic
 router.register("ai-keys", AIProviderKeyViewSet, basename="ai-keys")

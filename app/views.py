@@ -40,6 +40,7 @@ from app.services.appraisal.agentic_results import bulk_delete_appraisals, bulk_
 from app.services.appraisal.appraisal_report import AppraisedListService
 from app.services.appraisal.benefits_package import SwgListService
 from app.services.appraisal.running import generation_status
+from app.services.appraisal.panel_score import PanelScoreService
 from app.services.appraisal.service import appraise_repeated, appraise_target, appraise_targets
 from app.services.appraisal_panel import AppraisalPanelService
 from app.services.evidence_coverage import EvidenceCoverageService as cov
@@ -2383,6 +2384,10 @@ class DecisionTemplateViewSet(viewsets.ViewSet):
 
     def retrieve(self, request, pk=None):
         return _respond(dt.get_template(pk, request, can_regenerate=self._can_regenerate(request)))
+    
+    @action(detail=True, methods=["get"], url_path="detailed")
+    def detailed(self, request, pk=None):
+        return _respond(dt.detailed_info(pk, request))
 
     def create(self, request):
         return _respond(dt.generate(request.data, request, request.user))
@@ -2391,6 +2396,42 @@ class DecisionTemplateViewSet(viewsets.ViewSet):
         return _respond(dt.delete_template(pk))
 
 
+
+
+def _resp(result):
+    if result.get("ok"):
+        return Response(result.get("data"), status=result.get("status", 200))
+    return Response({"detail": result.get("error")}, status=result.get("status", 400))
+
+
+class PanelAppraisalScoreViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    def list(self, request):
+        return _resp(PanelScoreService.list_scores(request.query_params))
+
+    def retrieve(self, request, pk=None):
+        return _resp(PanelScoreService.get_score(pk))
+
+    def create(self, request):
+        return _resp(PanelScoreService.create_score(request.data, request.user))
+
+    def update(self, request, pk=None):
+        return _resp(PanelScoreService.update_score(pk, request.data, request.user, partial=False))
+
+    def partial_update(self, request, pk=None):
+        return _resp(PanelScoreService.update_score(pk, request.data, request.user, partial=True))
+
+    def destroy(self, request, pk=None):
+        return _resp(PanelScoreService.delete_score(pk))
+
+    @action(detail=False, methods=["post"], url_path="bulk")
+    def bulk(self, request):
+        return _resp(PanelScoreService.bulk_upsert(request.data, request.user))
+
+    @action(detail=False, methods=["post"], url_path="bulk-delete")
+    def bulk_delete(self, request):
+        return _resp(PanelScoreService.bulk_delete(request.data.get("ids", [])))
 
 class AIProviderKeyViewSet(viewsets.ModelViewSet):
     """Manage provider API keys. Admin only. Keys are write-only in output."""

@@ -1093,7 +1093,51 @@ class DecisionTemplateCriterion(models.Model):
     def __str__(self):
         return f"{self.template.name} — {self.criterion.criteria}"
     
+    
+    
+class PanelAppraisalScore(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="panel_appraisal_scores")
 
+    intervention = models.ForeignKey(
+        InterventionProposal, on_delete=models.CASCADE,
+        related_name="panel_scores", null=True, blank=True,
+    )
+    national_proposal = models.ForeignKey(
+        NationalProgramProposal, on_delete=models.CASCADE,
+        related_name="panel_scores", null=True, blank=True,
+    )
+
+    criteria = models.ForeignKey(CriteriaAppraisalTool, on_delete=models.CASCADE, related_name="panel_scores")
+
+    service = models.CharField(max_length=255, blank=True, default="")
+    service_key = models.CharField(max_length=255, blank=True, default="", editable=False)
+
+    score = models.JSONField(default=dict, blank=True)
+    comment = models.TextField(blank=True, null=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["intervention", "criteria"]),
+            models.Index(fields=["national_proposal", "criteria"]),
+            models.Index(fields=["reviewer"]),
+        ]
+
+    @staticmethod
+    def make_service_key(service: str) -> str:
+        return "".join(ch for ch in (service or "").lower() if ch.isalnum())
+
+    def save(self, *args, **kwargs):
+        self.service_key = self.make_service_key(self.service)
+        super().save(*args, **kwargs)
+
+    @property
+    def target(self):
+        return self.intervention or self.national_proposal
+    
 class PanelAppraisal(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     intervention = models.ForeignKey(

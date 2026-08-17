@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, PanelAppraisedList, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, PanelAppraisalScore, PanelAppraisedList, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore
 from django.contrib.auth import get_user_model
 
  
@@ -828,6 +828,61 @@ class SwgPrioritizedListSerializer(serializers.ModelSerializer):
         model = SwgPrioritizedList
         fields = "__all__"
 
+
+class PanelAppraisalScoreSerializer(serializers.ModelSerializer):
+    """Used for GET — enriched with reviewer + target details."""
+    reviewer_name = serializers.SerializerMethodField()
+    reviewer_email = serializers.SerializerMethodField()
+    target_type = serializers.SerializerMethodField()
+    target_id = serializers.SerializerMethodField()
+    intervention_name = serializers.SerializerMethodField()
+    intervention_reference = serializers.SerializerMethodField()
+    criteria_name = serializers.SerializerMethodField()
+    package = serializers.SerializerMethodField()
+    phase = serializers.SerializerMethodField()
+
+    class Meta:
+        model = PanelAppraisalScore
+        fields = [
+            "id", "score", "comment", "created_at", "updated_at",
+            "reviewer", "intervention", "national_proposal", "criteria",
+            "service", "service_key",
+            "reviewer_name", "reviewer_email", "target_type", "target_id",
+            "intervention_name", "intervention_reference", "criteria_name",
+            "package", "phase",
+        ]
+        read_only_fields = fields
+
+    def get_reviewer_name(self, obj) -> str:
+        return obj.reviewer.username
+
+    def get_reviewer_email(self, obj) -> str:
+        return obj.reviewer.email
+
+    def get_target_type(self, obj) -> str:
+        return "national_proposal" if obj.national_proposal_id else "intervention"
+
+    def get_target_id(self, obj) -> str:
+        return str(obj.national_proposal_id or obj.intervention_id or "")
+
+    def get_intervention_name(self, obj) -> str:
+        t = obj.target
+        # interventions use intervention_name; nationals use title
+        return getattr(t, "intervention_name", None) or getattr(t, "title", "") or str(t)
+
+    def get_intervention_reference(self, obj) -> str:
+        return getattr(obj.target, "reference_number", "") or ""
+
+    def get_criteria_name(self, obj) -> str:
+        return obj.criteria.criteria if obj.criteria_id else ""
+
+    def get_package(self, obj):
+        pkg = getattr(obj.target, "package", None)
+        return getattr(pkg, "name", None) if pkg else None
+
+    def get_phase(self, obj):
+        ph = getattr(obj.target, "phase", None)
+        return getattr(ph, "name", None) if ph else None
 
 class PanelAppraisedListSerializer(serializers.ModelSerializer):
     class Meta:

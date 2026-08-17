@@ -49,8 +49,22 @@ class DecisionTemplateService:
         return _ok({"count": len(rows), "targets": rows})
 
 
+    # @staticmethod
+    # def get_template(pk, request=None):
+    #     t = (InterventionProposal.objects.filter(pk=pk)
+    #          .select_related("package", "phase").first())
+    #     kind = "intervention"
+    #     if not t:
+    #         t = (NationalProgramProposal.objects.filter(pk=pk)
+    #              .select_related("package", "phase").first())
+    #         kind = "national_proposal"
+    #     if not t:
+    #         return _err("not found", 404)
+
+    #     rule_by_crit = DecisionTemplateService._rules()
+    #     return _ok(DecisionTemplateService._target(kind, t, rule_by_crit, request))
     @staticmethod
-    def get_template(pk, request=None):
+    def get_template(pk, request=None, can_regenerate=False):
         t = (InterventionProposal.objects.filter(pk=pk)
              .select_related("package", "phase").first())
         kind = "intervention"
@@ -64,6 +78,84 @@ class DecisionTemplateService:
         rule_by_crit = DecisionTemplateService._rules()
         return _ok(DecisionTemplateService._target(kind, t, rule_by_crit, request))
 
+
+    @staticmethod
+    def detailed_info(pk, request=None):
+        """Full evidence for one target — same EvidenceTarget shape as
+        get_template, but nothing is trimmed. `target_fields` is the union of
+        every field submitted (not just the rule's important subset) and each
+        record's evidence is the raw `data` (empty values kept). This is the
+        "everything the proposer submitted" view, not the cleaned summary."""
+        t = (InterventionProposal.objects.filter(pk=pk)
+             .select_related("package", "phase").first())
+        kind = "intervention"
+        if not t:
+            t = (NationalProgramProposal.objects.filter(pk=pk)
+                 .select_related("package", "phase").first())
+            kind = "national_proposal"
+        if not t:
+            return _err("not found", 404)
+
+        rule_by_crit = DecisionTemplateService._rules()
+        field = "intervention" if kind == "intervention" else "national_proposal"
+        ev_qs = (CriterionEvidence.objects.filter(**{field: t})
+                 .select_related("criterion")
+                 .order_by("criterion__criteria", "created_at", "id"))
+
+        groups = {}
+        for ev in ev_qs:
+            name = (getattr(ev.criterion, "criteria", "") or "").strip()
+            key = name.lower()
+            rule = rule_by_crit.get(ev.criterion_id)
+            g = groups.get(key)
+            if not g:
+                g = {
+                    "id": str(ev.criterion_id),
+                    "criterion": name,
+                    "type": rule.kind if rule else "descriptive",
+                    # rule fields first, then every other submitted key appended below
+                    "target_fields": list(rule.target_fields or []) if rule else [],
+                    "evidence": {},   # merged view — raw, empties kept
+                    "children": [],   # every record, raw data untouched
+                    "guides": DecisionTemplateService._guides(rule, request),
+                }
+                groups[key] = g
+
+            data = ev.data if isinstance(ev.data, dict) else {}
+            for k in data.keys():
+                if k not in g["target_fields"]:
+                    g["target_fields"].append(k)
+            for k, v in data.items():
+                DecisionTemplateService._merge_raw(g["evidence"], k, v)
+            g["children"].append({
+                "evidence_id": str(ev.id),
+                "score": getattr(ev, "score", None),
+                "created_at": ev.created_at.isoformat() if getattr(ev, "created_at", None) else None,
+                "evidence": dict(data),  # RAW — nothing dropped, nothing merged
+            })
+
+        return _ok({
+            "id": str(t.id),
+            "reference_number": getattr(t, "reference_number", None),
+            "name": getattr(t, "intervention_name", None) or getattr(t, "title", None),
+            "kind": kind,
+            "package": getattr(getattr(t, "package", None), "name", None),
+            "phase": getattr(getattr(t, "phase", None), "name", None),
+            "criteria": list(groups.values()),
+        })
+
+    @staticmethod
+    def _merge_raw(bag, key, value):
+        """Merge for the detailed view — unlike _add_field it does NOT drop
+        empty values, so blank fields still surface. Distinct values on the
+        same key collect into a list."""
+        if key not in bag:
+            bag[key] = value
+            return
+        cur = bag[key] if isinstance(bag[key], list) else [bag[key]]
+        add = value if isinstance(value, list) else [value]
+        bag[key] = cur + [x for x in add if x not in cur]
+        
     @staticmethod
     def generate(payload, request=None, user=None):
         """
