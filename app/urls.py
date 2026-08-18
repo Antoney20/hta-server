@@ -43,6 +43,7 @@ from .views import (
     TopicPriorityViewSet,
     UsersListView,
     WeightingReportView,
+    WeightingViewSet,
     proposal_detail_any,
     search_interventions,
 )
@@ -90,6 +91,8 @@ router.register("ai-keys", AIProviderKeyViewSet, basename="ai-keys")
 router.register("ai-models", AIModelViewSet, basename="ai-models")
 router.register("appraisals", AppraisalViewSet, basename="appraisals")
 router.register(r"appraisal-scores", AppraisalScoreViewSet, basename="appraisal-score")
+router.register(r"weighting/surveys", WeightingViewSet, basename="weighting-survey")
+ 
 # 
 router.register(r"swg", SwgPrioritizedViewSet, basename="swg")
 router.register(r"appraised-lists", PanelAppraisedViewSet, basename="appraised-list")

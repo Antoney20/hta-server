@@ -1427,6 +1427,79 @@ class PanelAppraisedList(models.Model):
 
     def __str__(self):
         return self.name
+    
+ 
+class WeightingSurvey(models.Model):
+    """A single weighting elicitation round issued to the panel."""
+ 
+    title = models.CharField(max_length=255)
+    description = models.TextField(blank=True, default="")
+    status = models.CharField(max_length=20, default="draft") 
+    opened_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+       User, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="created_weighting_surveys",
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    def __str__(self):
+        return f"{self.title} ({self.status})"
+ 
+ 
+class WeightingResponse(models.Model):
+ 
+    survey = models.ForeignKey(
+        WeightingSurvey, on_delete=models.CASCADE, related_name="responses"
+    )
+    respondent = models.ForeignKey(
+        User, on_delete=models.CASCADE,
+        related_name="weighting_responses",
+    )
+    respondent_name = models.CharField(max_length=255, blank=True, default="")
+    respondent_role = models.CharField(max_length=255, blank=True, default="")
+    response_date = models.DateField(null=True, blank=True)
+ 
+    sensitivity_criterion = models.CharField(max_length=64, blank=True, default="")
+
+    scenario_1_choice = models.CharField(max_length=32, blank=True, default="")
+    scenario_2_choice = models.CharField(max_length=32, blank=True, default="")
+ 
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+ 
+    def __str__(self):
+        return f"{self.respondent_name or self.respondent} — {self.survey}"
+ 
+ 
+class WeightingAllocation(models.Model):
+    """Part A — one criterion's raw point allocation within a response."""
+ 
+    response = models.ForeignKey(
+        WeightingResponse, on_delete=models.CASCADE, related_name="allocations"
+    )
+    criterion = models.CharField(max_length=64)  # slug sent by frontend
+    points = models.PositiveSmallIntegerField(default=0)
+ 
+    def __str__(self):
+        return f"{self.criterion} = {self.points}"
+ 
+ 
+class WeightingKillerFlag(models.Model):
+    """Part B Q1 — one killer-criterion candidate flag within a response."""
+ 
+    response = models.ForeignKey(
+        WeightingResponse, on_delete=models.CASCADE, related_name="killer_flags"
+    )
+    candidate = models.CharField(max_length=64) 
+    is_killer = models.BooleanField(default=False)
+    rank = models.PositiveSmallIntegerField(null=True, blank=True)  # 1–3
+    other_text = models.CharField(max_length=255, blank=True, default="")
+ 
+    def __str__(self):
+        return f"{self.candidate} (killer={self.is_killer}, rank={self.rank})"
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)

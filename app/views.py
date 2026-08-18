@@ -5,6 +5,7 @@ from django.db import transaction
 from django.utils import timezone
 from rest_framework.views import APIView
 from rest_framework.request import Request
+from rest_framework import status as http_status
  
  
 from rest_framework import viewsets, permissions
@@ -42,6 +43,7 @@ from app.services.appraisal.benefits_package import SwgListService
 from app.services.appraisal.running import generation_status
 from app.services.appraisal.panel_score import PanelScoreService
 from app.services.appraisal.service import appraise_repeated, appraise_target, appraise_targets
+from app.services.appraisal.survey import WeightingService
 from app.services.appraisal_panel import AppraisalPanelService
 from app.services.evidence_coverage import EvidenceCoverageService as cov
 from app.services.criteria_rules import CriteriaRuleService as rules
@@ -61,7 +63,7 @@ from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdm
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
-from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AssessmentEvidence, BenefitPackage, CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaInformation, DecisionType, EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase, InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, SelectionTool, SubActivity, SystemCategory, InterventionSystemCategory, InterventionScore, WeightingSurvey
 from .serializers import (
     AIModelSerializer,
     AIProviderKeySerializer,
@@ -98,6 +100,8 @@ from .serializers import (
     InterventionSystemCategorySerializer,
     InterventionScoreSerializer,
     UserSummarySerializer,
+    WeightingResponseSerializer,
+    WeightingSurveySerializer,
 )
 
 from django.db.models import ProtectedError
@@ -2707,3 +2711,44 @@ class AppraisalScoreViewSet(viewsets.ViewSet):
             "Selection updated.",
         )
         
+
+
+
+ 
+ 
+
+class WeightingViewSet(viewsets.ModelViewSet):
+    """
+    Survey CRUD (admin) + id-less member actions on the active survey:
+      POST /weighting/surveys/submit/  -> create scores (uses request.user)
+      GET  /weighting/surveys/scores/  -> get scores   (committee aggregation)
+    """
+ 
+    queryset = WeightingSurvey.objects.all()
+    serializer_class = WeightingSurveySerializer
+    ADMIN_ACTIONS = {"create", "update", "partial_update", "destroy", "scores"}
+ 
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS:
+            return [IsAdmin()]
+        return [IsAuthenticated()]
+ 
+    def perform_create(self, serializer):
+        serializer.save(created_by=self.request.user)
+ 
+    @action(detail=False, methods=["post"], url_path="submit")
+    def submit(self, request):
+        survey = WeightingService.active_survey()
+        if not survey:
+            return _err("No active weighting survey.", status_code=http_status.HTTP_404_NOT_FOUND)
+        resp, err = WeightingService.submit_response(survey, request.user, request.data)
+        if err:
+            return _err(err, status_code=http_status.HTTP_400_BAD_REQUEST)
+        return _ok(WeightingResponseSerializer(resp).data, "Response submitted.")
+ 
+    @action(detail=False, methods=["get"], url_path="scores")
+    def scores(self, request):
+        survey = WeightingService.active_survey()
+        if not survey:
+            return _err("No active weighting survey.", status_code=http_status.HTTP_404_NOT_FOUND)
+        return _ok(WeightingService.aggregate(survey))

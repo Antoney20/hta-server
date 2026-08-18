@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, PanelAppraisalScore, PanelAppraisedList, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, PanelAppraisalScore, PanelAppraisedList, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore, WeightingAllocation, WeightingKillerFlag, WeightingResponse, WeightingSurvey
 from django.contrib.auth import get_user_model
 
  
@@ -1080,5 +1080,35 @@ class PanelAppraisalDetailSerializer(PanelAppraisalSerializer):
 
 
 
+class WeightingAllocationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WeightingAllocation
+        fields = "__all__"
+        read_only_fields = ["id", "response"]
+ 
+ 
+class WeightingKillerFlagSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WeightingKillerFlag
+        fields = "__all__"
+        read_only_fields = ["id", "response"]
+ 
+ 
+class WeightingResponseSerializer(serializers.ModelSerializer):
+    allocations = WeightingAllocationSerializer(many=True, read_only=True)
+    killer_flags = WeightingKillerFlagSerializer(many=True, read_only=True)
+ 
+    class Meta:
+        model = WeightingResponse
+        fields = "__all__"
+        read_only_fields = ["id", "survey", "respondent", "submitted_at",
+                            "created_at", "updated_at"]
+ 
+ 
+class WeightingSurveySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WeightingSurvey
+        fields = "__all__"
+        read_only_fields = ["id", "created_by", "created_at", "updated_at"]
 
 
