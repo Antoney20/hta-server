@@ -29,6 +29,7 @@ from .views import (
     NationalProgramViewSet,
     PanelAppraisalScoreViewSet,
     PanelAppraisedViewSet,
+    PanelScoringRuleViewSet,
     # ProposedPackageViewSet,
     PublicProgramViewSet,
     PublicProposalViewSet,
@@ -85,6 +86,7 @@ router.register("criteria-rules", CriteriaRuleViewSet, basename="criteria-rules"
 router.register("decision-templates", DecisionTemplateViewSet, basename="decision-templates")
 #panel score
 router.register(r"panel-scores", PanelAppraisalScoreViewSet, basename="panel-score")
+router.register(r"panel-scoring-rules", PanelScoringRuleViewSet, basename="panel-scoring-rule")
 
 #agentic
 router.register("ai-keys", AIProviderKeyViewSet, basename="ai-keys")

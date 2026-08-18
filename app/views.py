@@ -39,6 +39,7 @@ from app.core.services.national import NationalProgramService, ProgramProposalSe
 from app.services import criteria_info
 from app.services.appraisal.agentic_results import bulk_delete_appraisals, bulk_delete_scores, bulk_set_selected, clear_comment, delete_appraisal, delete_score, edit_score, get_agentic_results, select_appraisal, set_comment
 from app.services.appraisal.appraisal_report import AppraisedListService
+from app.services.appraisal.panel_rules import PanelRuleService as pr
 from app.services.appraisal.benefits_package import SwgListService
 from app.services.appraisal.running import generation_status
 from app.services.appraisal.panel_score import PanelScoreService
@@ -2451,6 +2452,40 @@ class PanelAppraisalScoreViewSet(viewsets.ViewSet):
     def delete_units(self, request):
         return _resp(PanelScoreService.delete_for_units(request.data.get("units", [])))
 
+
+
+class PanelScoringRuleViewSet(viewsets.ViewSet):
+    ADMIN_ACTIONS = {"create", "update", "partial_update", "destroy"}
+
+    def get_permissions(self):
+        if self.action in self.ADMIN_ACTIONS:
+            return [IsAdmin()]
+        return [IsAuthenticated()]
+
+    def list(self, request):
+        return _resp(pr.list_rules(request.query_params))
+
+    def retrieve(self, request, pk=None):
+        return _resp(pr.get_rule(pk))
+
+    def create(self, request):
+        return _resp(pr.create_rule(request.data))
+
+    def update(self, request, pk=None):
+        return _resp(pr.update_rule(pk, request.data, partial=False))
+
+    def partial_update(self, request, pk=None):
+        return _resp(pr.update_rule(pk, request.data, partial=True))
+
+    def destroy(self, request, pk=None):
+        return _resp(pr.delete_rule(pk))
+
+    @action(detail=False, methods=["post"], url_path="preview")
+    def preview(self, request):
+        return _resp(pr.preview(request.data))
+    @action(detail=False, methods=["post"], url_path="import")
+    def bulk_import(self, request):
+        return _resp(pr.bulk_import(request.data))
 class AIProviderKeyViewSet(viewsets.ModelViewSet):
     """Manage provider API keys. Admin only. Keys are write-only in output."""
     queryset = AIProviderKey.objects.all()

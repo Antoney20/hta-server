@@ -1,7 +1,7 @@
 from rest_framework import serializers
 
 from users.models import CustomUser, InterventionProposal
-from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, PanelAppraisalScore, PanelAppraisedList, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore, WeightingAllocation, WeightingKillerFlag, WeightingResponse, WeightingSurvey
+from .models import AIModel, AIProviderKey, Activity, AppraisalCriteriaEvidence, AppraisalRun, AppraisalScore, AssessmentEvidence, AssessmentEvidenceDocument, BenefitPackage,CriteriaAppraisalScore, CriteriaAppraisalTool, CriteriaGuideDocument, CriteriaInformation, CriteriaReferenceScale, CriteriaRule,  CriterionEvidence, DecisionTemplate, DecisionTemplateCriterion, DecisionType,  EvidenceCriterion, EvidenceExtraction, FeedbackCategory, FeedbackEmailLog, InterventionPackage, InterventionPhase,  InterventionStatusUpdate, NationalProgram, NationalProgramProposal, PanelAppraisal, PanelAppraisalScore, PanelAppraisedList, PanelScoringRule, ProposedBenefitPackage, RevisedBenefitPackage,  SelectionTool, SubActivity, SwgPrioritizedList, SystemCategory, InterventionSystemCategory, InterventionScore, WeightingAllocation, WeightingKillerFlag, WeightingResponse, WeightingSurvey
 from django.contrib.auth import get_user_model
 
  
@@ -1112,3 +1112,22 @@ class WeightingSurveySerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_by", "created_at", "updated_at"]
 
 
+class PanelScoringRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PanelScoringRule
+        fields = "__all__"
+        read_only_fields = ("id", "criteria_key", "created_at", "updated_at")
+
+    def validate(self, attrs):
+        kind = attrs.get("kind", getattr(self.instance, "kind", PanelScoringRule.KIND_BAND))
+        bands = attrs.get("bands", getattr(self.instance, "bands", []))
+        if not isinstance(bands, list) or not bands:
+            raise serializers.ValidationError({"bands": "at least one band is required"})
+        for i, b in enumerate(bands):
+            if not isinstance(b, dict) or b.get("score") is None:
+                raise serializers.ValidationError({"bands": f"band {i}: missing score"})
+            if kind == PanelScoringRule.KIND_BAND and not b.get("op"):
+                raise serializers.ValidationError({"bands": f"band {i}: missing op"})
+            if kind == PanelScoringRule.KIND_COMBO and not b.get("combo"):
+                raise serializers.ValidationError({"bands": f"band {i}: missing combo"})
+        return attrs

@@ -1500,6 +1500,54 @@ class WeightingKillerFlag(models.Model):
  
     def __str__(self):
         return f"{self.candidate} (killer={self.is_killer}, rank={self.rank})"
+    
+class PanelScoringRule(models.Model):
+    """Deterministic auto-scoring rule for one criterion (matched to
+    CriteriaAppraisalTool by name, case-insensitively). Stores how an evidence
+    value — or a sum/combination of target fields — maps to a criterion score.
+    The rule stores the target `score` (points); the score resolves to the
+    matching CriteriaAppraisalTool option at apply time."""
+
+    KIND_BAND = "band"    # numeric value → range band → score
+    KIND_COMBO = "combo"  # set of category codes → score
+    KIND_CHOICES = [(KIND_BAND, "Band"), (KIND_COMBO, "Combo")]
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+
+    criteria = models.CharField(max_length=255)                    # display name
+    criteria_key = models.CharField(max_length=255, editable=False, db_index=True)
+
+    kind = models.CharField(max_length=16, choices=KIND_CHOICES, default=KIND_BAND)
+    description = models.TextField(blank=True, default="")
+
+    # BAND: evidence field key(s) to read; aggregate "sum" folds >1 field.
+    target_fields = models.JSONField(default=list, blank=True)
+    aggregate = models.CharField(max_length=16, blank=True, default="")  # "" | "sum" | "combo"
+
+    # COMBO: dimensions and their code levels (E/R/N …).
+    items = models.JSONField(default=list, blank=True)
+
+    # BAND bands:  {op, value, score, label}
+    # COMBO bands: {combo: [codes], score, label}
+    bands = models.JSONField(default=list, blank=True)
+
+    active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        indexes = [models.Index(fields=["criteria_key", "active"])]
+
+    def __str__(self):
+        return f"{self.criteria} ({self.kind})"
+
+    @staticmethod
+    def make_key(name: str) -> str:
+        return "".join(ch for ch in (name or "").lower() if ch.isalnum())
+
+    def save(self, *args, **kwargs):
+        self.criteria_key = self.make_key(self.criteria)
+        super().save(*args, **kwargs)
 
 auditlog.register(SelectionTool)
 auditlog.register(SystemCategory)
