@@ -49,20 +49,6 @@
 #         return _ok({"count": len(rows), "targets": rows})
 
 
-#     # @staticmethod
-#     # def get_template(pk, request=None):
-#     #     t = (InterventionProposal.objects.filter(pk=pk)
-#     #          .select_related("package", "phase").first())
-#     #     kind = "intervention"
-#     #     if not t:
-#     #         t = (NationalProgramProposal.objects.filter(pk=pk)
-#     #              .select_related("package", "phase").first())
-#     #         kind = "national_proposal"
-#     #     if not t:
-#     #         return _err("not found", 404)
-
-#     #     rule_by_crit = DecisionTemplateService._rules()
-#     #     return _ok(DecisionTemplateService._target(kind, t, rule_by_crit, request))
 #     @staticmethod
 #     def get_template(pk, request=None, can_regenerate=False):
 #         t = (InterventionProposal.objects.filter(pk=pk)
@@ -77,6 +63,29 @@
 
 #         rule_by_crit = DecisionTemplateService._rules()
 #         return _ok(DecisionTemplateService._target(kind, t, rule_by_crit, request))
+
+
+#     @staticmethod
+#     def scoring_template(pk, request=None):
+#         """Evidence for the PANEL SCORING detail page. Same target envelope as
+#         `get_template`, but each criterion's `evidence` is a LIST — one item per
+#         uploaded record, each carrying that record's own scalar data (via
+#         `_child`). No merged bag, no `children`, no `service_rows`. This is the
+#         un-zipped shape: two records under one criterion stay two items, never a
+#         `[95, 272]` field list. Kept separate from `_target` so the export /
+#         general grid and the overview list are untouched."""
+#         t = (InterventionProposal.objects.filter(pk=pk)
+#              .select_related("package", "phase").first())
+#         kind = "intervention"
+#         if not t:
+#             t = (NationalProgramProposal.objects.filter(pk=pk)
+#                  .select_related("package", "phase").first())
+#             kind = "national_proposal"
+#         if not t:
+#             return _err("not found", 404)
+
+#         rule_by_crit = DecisionTemplateService._rules()
+#         return _ok(DecisionTemplateService._scoring_target(kind, t, rule_by_crit, request))
 
 
 #     @staticmethod
@@ -155,7 +164,7 @@
 #         cur = bag[key] if isinstance(bag[key], list) else [bag[key]]
 #         add = value if isinstance(value, list) else [value]
 #         bag[key] = cur + [x for x in add if x not in cur]
-        
+
 #     @staticmethod
 #     def generate(payload, request=None, user=None):
 #         """
@@ -221,6 +230,11 @@
 #                  .order_by("criterion__criteria"))
 
 #         groups = {}
+#         # per-service rows for the general/export view. we DON'T merge or clean
+#         # here — each uploaded evidence record is kept as it was uploaded, then
+#         # grouped by its own service. so field values stay row-aligned and no
+#         # value zips across services (the "4 values" bug).
+#         service_buckets = {}
 #         for ev in ev_qs:
 #             name = (getattr(ev.criterion, "criteria", "") or "").strip()
 #             key = name.lower()
@@ -248,6 +262,67 @@
 #             DecisionTemplateService._absorb(g["evidence"], ev)
 #             g["children"].append(DecisionTemplateService._child(ev))
 
+#             # bucket this record under its own service, kept RAW (exactly as
+#             # uploaded — no merge, no cleaning). first record for a given
+#             # service+criterion wins; duplicates stay visible via `children`.
+#             data = ev.data if isinstance(ev.data, dict) else {}
+#             skey, sdisp = DecisionTemplateService._service_of(data)
+#             sb = service_buckets.setdefault(
+#                 skey, {"service": sdisp, "service_key": skey, "criteria": {}}
+#             )
+#             sb["criteria"].setdefault(key, dict(data))
+
+#         return {
+#             "id": str(t.id),
+#             "reference_number": getattr(t, "reference_number", None),
+#             "name": getattr(t, "intervention_name", None) or getattr(t, "title", None),
+#             "kind": kind,
+#             "package": getattr(getattr(t, "package", None), "name", None),
+#             "phase": getattr(getattr(t, "phase", None), "name", None),
+#             "criteria": list(groups.values()),
+#             # raw evidence rows grouped by service for the general/export grid.
+#             # one entry per distinct service; `criteria` maps criterion-name
+#             # (lowercased, matching the frontend column key) -> that record's
+#             # raw uploaded data (empties kept).
+#             "service_rows": list(service_buckets.values()),
+#         }
+
+
+#     @staticmethod
+#     def _scoring_target(kind, t, rule_by_crit, request):
+#         """Builder for `scoring_template`. Same envelope as `_target`, but each
+#         criterion's `evidence` is a LIST of whole records (scalar, un-zipped) —
+#         no merged bag, no `children`, no `service_rows`. `_child`/`_record` do
+#         the per-record cleaning, so nothing merges across records."""
+#         field = "intervention" if kind == "intervention" else "national_proposal"
+#         ev_qs = (CriterionEvidence.objects.filter(**{field: t})
+#                  .select_related("criterion")
+#                  .order_by("criterion__criteria", "created_at", "id"))
+
+#         groups = {}
+#         for ev in ev_qs:
+#             name = (getattr(ev.criterion, "criteria", "") or "").strip()
+#             key = name.lower()
+#             rule = rule_by_crit.get(ev.criterion_id)
+#             g = groups.get(key)
+#             if not g:
+#                 g = {
+#                     "id": str(ev.criterion_id),
+#                     "criterion": name,
+#                     "type": rule.kind if rule else "descriptive",
+#                     "target_fields": [],
+#                     # ONE ITEM PER UPLOADED RECORD, in upload order. Each item is
+#                     # that record's own scalar data (empties dropped). Two records
+#                     # → two items, never `[95, 272]`.
+#                     "evidence": [],
+#                     "guides": DecisionTemplateService._guides(rule, request),
+#                 }
+#                 groups[key] = g
+#             for f in (rule.target_fields or [] if rule else []):
+#                 if f not in g["target_fields"]:
+#                     g["target_fields"].append(f)
+#             g["evidence"].append(DecisionTemplateService._child(ev))
+
 #         return {
 #             "id": str(t.id),
 #             "reference_number": getattr(t, "reference_number", None),
@@ -257,6 +332,21 @@
 #             "phase": getattr(getattr(t, "phase", None), "name", None),
 #             "criteria": list(groups.values()),
 #         }
+
+
+#     @staticmethod
+#     def _service_of(data):
+#         """Normalized service for row-splitting. Returns (key, display).
+#         `key` is lowercase-alphanumeric only, so spelling/spacing variants
+#         collapse to one row (mirrors the frontend service-key normalization).
+#         Records with no service land under the "" key (the No-service row)."""
+#         v = data.get("service") if isinstance(data, dict) else None
+#         if isinstance(v, list):
+#             v = next((x for x in v if x not in (None, "")), "")
+#         v = v if isinstance(v, str) else ("" if v is None else str(v))
+#         disp = v.strip()
+#         key = "".join(ch for ch in disp.lower() if ch.isalnum())
+#         return key, disp
 
 
 #     @staticmethod
@@ -313,7 +403,7 @@
 #                 "file": _abs(request, f.url if f else None),
 #             })
 #         return out
-        
+
 #     @classmethod
 #     def evidence_for_target(cls, target_type: str, target_id: str, request=None) -> dict:
 #         """
@@ -327,8 +417,6 @@
 #         if not t:
 #             raise ValueError(f"{target_type} {target_id} not found")
 #         return cls._target(target_type, t, cls._rules(), request)
-
-
 
 
 from django.db.models import Count
@@ -356,6 +444,8 @@ class DecisionTemplateService:
     def list_templates(params, request=None):
         kind = (params.get("kind") or "").lower() if params else ""
 
+        iv_cov, np_cov = DecisionTemplateService._assessment_coverage()
+
         rows = []
         if kind in ("", "intervention"):
             counts = {
@@ -366,7 +456,8 @@ class DecisionTemplateService:
             }
             for t in (InterventionProposal.objects.filter(id__in=counts)
                       .select_related("package", "phase")):
-                rows.append(DecisionTemplateService._row("intervention", t, counts[t.id]))
+                rows.append(DecisionTemplateService._row(
+                    "intervention", t, counts[t.id], iv_cov.get(str(t.id))))
 
         if kind in ("", "national_proposal"):
             counts = {
@@ -377,7 +468,8 @@ class DecisionTemplateService:
             }
             for t in (NationalProgramProposal.objects.filter(id__in=counts)
                       .select_related("package", "phase")):
-                rows.append(DecisionTemplateService._row("national_proposal", t, counts[t.id]))
+                rows.append(DecisionTemplateService._row(
+                    "national_proposal", t, counts[t.id], np_cov.get(str(t.id))))
 
         return _ok({"count": len(rows), "targets": rows})
 
@@ -396,6 +488,29 @@ class DecisionTemplateService:
 
         rule_by_crit = DecisionTemplateService._rules()
         return _ok(DecisionTemplateService._target(kind, t, rule_by_crit, request))
+
+
+    @staticmethod
+    def scoring_template(pk, request=None):
+        """Evidence for the PANEL SCORING detail page. Same target envelope as
+        `get_template`, but each criterion's `evidence` is a LIST — one item per
+        uploaded record, each carrying that record's own scalar data (via
+        `_child`). No merged bag, no `children`, no `service_rows`. This is the
+        un-zipped shape: two records under one criterion stay two items, never a
+        `[95, 272]` field list. Kept separate from `_target` so the export /
+        general grid and the overview list are untouched."""
+        t = (InterventionProposal.objects.filter(pk=pk)
+             .select_related("package", "phase").first())
+        kind = "intervention"
+        if not t:
+            t = (NationalProgramProposal.objects.filter(pk=pk)
+                 .select_related("package", "phase").first())
+            kind = "national_proposal"
+        if not t:
+            return _err("not found", 404)
+
+        rule_by_crit = DecisionTemplateService._rules()
+        return _ok(DecisionTemplateService._scoring_target(kind, t, rule_by_crit, request))
 
 
     @staticmethod
@@ -520,8 +635,34 @@ class DecisionTemplateService:
         }
 
     @staticmethod
-    def _row(kind, t, criteria_count):
-        return {
+    def _assessment_coverage():
+        """target-id -> assessment-evidence id, so the overview can link to the
+        evidence detail ONLY for targets that have some. First evidence wins.
+        (Assumes AssessmentEvidence M2M fields `interventions` /
+        `program_proposals` — adjust the two accessors if yours differ.)"""
+        from app.models import AssessmentEvidence
+        iv, np = {}, {}
+        for ev in (AssessmentEvidence.objects
+                   .prefetch_related("interventions", "program_proposals")):
+            eid = str(ev.id)
+            for x in ev.interventions.all():
+                iv.setdefault(str(x.id), eid)
+            for x in ev.program_proposals.all():
+                np.setdefault(str(x.id), eid)
+        return iv, np
+
+    @staticmethod
+    def _assessment_for(kind, t):
+        """Assessment-evidence id for one target (or None). Used on the detail
+        envelope so it can link straight to the evidence detail when present."""
+        from app.models import AssessmentEvidence
+        field = "interventions" if kind == "intervention" else "program_proposals"
+        ev = AssessmentEvidence.objects.filter(**{field: t}).order_by("id").first()
+        return str(ev.id) if ev else None
+
+    @staticmethod
+    def _row(kind, t, criteria_count, assessment_evidence=None):
+        row = {
             "id": str(t.id),
             "reference_number": getattr(t, "reference_number", None),
             "name": getattr(t, "intervention_name", None) or getattr(t, "title", None),
@@ -530,6 +671,11 @@ class DecisionTemplateService:
             "phase": getattr(getattr(t, "phase", None), "name", None),
             "criteria_count": criteria_count,
         }
+        # only surfaced when the target actually has assessment evidence —
+        # frontend links to its detail with this id.
+        if assessment_evidence:
+            row["assessment_evidence"] = assessment_evidence
+        return row
 
 
     @staticmethod
@@ -582,7 +728,7 @@ class DecisionTemplateService:
             )
             sb["criteria"].setdefault(key, dict(data))
 
-        return {
+        out = {
             "id": str(t.id),
             "reference_number": getattr(t, "reference_number", None),
             "name": getattr(t, "intervention_name", None) or getattr(t, "title", None),
@@ -595,6 +741,57 @@ class DecisionTemplateService:
             # (lowercased, matching the frontend column key) -> that record's
             # raw uploaded data (empties kept).
             "service_rows": list(service_buckets.values()),
+        }
+        # only surfaced when the target actually has assessment evidence.
+        ass = DecisionTemplateService._assessment_for(kind, t)
+        if ass:
+            out["assessment_evidence"] = ass
+        return out
+
+
+    @staticmethod
+    def _scoring_target(kind, t, rule_by_crit, request):
+        """Builder for `scoring_template`. Same envelope as `_target`, but each
+        criterion's `evidence` is a LIST of whole records (scalar, un-zipped) —
+        no merged bag, no `children`, no `service_rows`. `_child`/`_record` do
+        the per-record cleaning, so nothing merges across records."""
+        field = "intervention" if kind == "intervention" else "national_proposal"
+        ev_qs = (CriterionEvidence.objects.filter(**{field: t})
+                 .select_related("criterion")
+                 .order_by("criterion__criteria", "created_at", "id"))
+
+        groups = {}
+        for ev in ev_qs:
+            name = (getattr(ev.criterion, "criteria", "") or "").strip()
+            key = name.lower()
+            rule = rule_by_crit.get(ev.criterion_id)
+            g = groups.get(key)
+            if not g:
+                g = {
+                    "id": str(ev.criterion_id),
+                    "criterion": name,
+                    "type": rule.kind if rule else "descriptive",
+                    "target_fields": [],
+                    # ONE ITEM PER UPLOADED RECORD, in upload order. Each item is
+                    # that record's own scalar data (empties dropped). Two records
+                    # → two items, never `[95, 272]`.
+                    "evidence": [],
+                    "guides": DecisionTemplateService._guides(rule, request),
+                }
+                groups[key] = g
+            for f in (rule.target_fields or [] if rule else []):
+                if f not in g["target_fields"]:
+                    g["target_fields"].append(f)
+            g["evidence"].append(DecisionTemplateService._child(ev))
+
+        return {
+            "id": str(t.id),
+            "reference_number": getattr(t, "reference_number", None),
+            "name": getattr(t, "intervention_name", None) or getattr(t, "title", None),
+            "kind": kind,
+            "package": getattr(getattr(t, "package", None), "name", None),
+            "phase": getattr(getattr(t, "phase", None), "name", None),
+            "criteria": list(groups.values()),
         }
 
 

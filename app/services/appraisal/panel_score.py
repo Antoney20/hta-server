@@ -54,7 +54,13 @@ class PanelScoreService:
     def scores_summary(params):
         """One row per scored unit (target + service): distinct reviewer count,
         target/service/phase for display, and each reviewer's scores nested —
-        score id, criterion name, chosen option's scoring_approach, points, notes."""
+        score id, criterion name, chosen option's scoring_approach, points, notes.
+
+        Two dates ride on each row so the client can group correctly:
+          submitted_at — the TARGET's own date (when the proposal was submitted).
+          scored_at    — the earliest score's created_at (when scoring happened).
+        The report groups by scored_at for full sessions (>6 criteria) and by
+        submitted_at otherwise; both are provided so that choice stays client-side."""
         qs = (PanelAppraisalScore.objects
               .select_related("intervention", "national_proposal",
                               "intervention__phase", "national_proposal__phase",
@@ -78,21 +84,32 @@ class PanelScoreService:
                 target = s.national_proposal or s.intervention
                 phase = getattr(target, "phase", None)
                 pkg = getattr(target, "package", None)
+                submitted = (getattr(target, "submitted_at", None)
+                             or getattr(target, "created_at", None))
                 b = {
                     "target_id": str(tid),
                     "target_type": "national_proposal" if s.national_proposal_id else "intervention",
                     "intervention": (getattr(target, "intervention_name", None)
                                      or getattr(target, "title", None) or ""),
                     "reference_number": getattr(target, "reference_number", None),
+                    # TARGET date (proposal submission). Client uses this for
+                    # partial units (<=6 criteria scored).
+                    "submitted_at": submitted.isoformat() if submitted else None,
+                    # SCORING date — filled after the loop from the earliest
+                    # score created_at. Client uses this for full sessions (>6).
+                    "scored_at": None,
                     "service": s.service or "",
                     "phase": getattr(phase, "name", None) if phase else None,
                     "package": getattr(pkg, "name", None) if pkg else None,
                     "_reviewers": set(),
+                    "_scored_times": [],
                     "scores": [],
                 }
                 buckets[key] = b
 
             b["_reviewers"].add(s.reviewer_id)
+            if s.created_at:
+                b["_scored_times"].append(s.created_at)
             crit = s.criteria  # the chosen CriteriaAppraisalTool option row
             sc = s.score if isinstance(s.score, dict) else {}
             b["scores"].append({
@@ -111,6 +128,9 @@ class PanelScoreService:
         rows = []
         for b in buckets.values():
             b["reviewers_scored"] = len(b.pop("_reviewers"))
+            times = b.pop("_scored_times")
+            earliest = min(times) if times else None
+            b["scored_at"] = earliest.isoformat() if earliest else None
             rows.append(b)
 
         if pkg := params.get("package"):

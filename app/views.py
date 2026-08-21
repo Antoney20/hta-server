@@ -2389,18 +2389,20 @@ class DecisionTemplateViewSet(viewsets.ViewSet):
 
     def retrieve(self, request, pk=None):
         return _respond(dt.get_template(pk, request, can_regenerate=self._can_regenerate(request)))
-    
+
     @action(detail=True, methods=["get"], url_path="detailed")
     def detailed(self, request, pk=None):
         return _respond(dt.detailed_info(pk, request))
+
+    @action(detail=True, methods=["get"], url_path="scoring")
+    def scoring(self, request, pk=None):
+        return _respond(dt.scoring_template(pk, request))
 
     def create(self, request):
         return _respond(dt.generate(request.data, request, request.user))
 
     def destroy(self, request, pk=None):
         return _respond(dt.delete_template(pk))
-
-
 
 
 def _resp(result):
