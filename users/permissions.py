@@ -103,6 +103,13 @@ class IsSecretariatOrAdmin(BasePermission):
             and request.user.role in ("secretariat", "admin")
         )
         
+class IsSecretariatOrAdminOrAssessment(BasePermission):
+    def has_permission(self, request, view):
+        return (
+            request.user.is_authenticated
+            and request.user.role in ("secretariat", "admin", "assessment")
+        )
+        
         
 class IsPanel(permissions.BasePermission):
     def has_permission(self, request, view):

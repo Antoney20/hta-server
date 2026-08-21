@@ -60,7 +60,7 @@ from app.services.tp import TopicPriorityService
 from app.services.weighting import WeightingReportService
 from members.services.notification_service import NotificationService
 from users.models import CustomUser, InterventionProposal, UserRole
-from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdmin, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, is_admin
+from users.permissions import IsAdmin, IsAssessment, IsPanel, IsSecretariatOrAdmin, IsSecretariatOrAdminOrAssessment, IsSecretariate, IsContentManager, IsRegularUser, IsSWG, IsAuthenticatedAndActive, IsAuthenticatedOrReadOnly, IsOwnerOrAdminOrReadOnly, is_admin
 from app.services.scoring import ScoringReportService
 from users.serializers import InterventionProposalSerializer
 
@@ -1610,7 +1610,7 @@ class AppraisalCriteriaEvidenceViewSet(viewsets.ModelViewSet):
             return [permissions.IsAuthenticated()]
         if self.action == "destroy":
             return [IsAdmin()]
-        return [IsSecretariatOrAdmin()]  # create, update, partial_update
+        return [IsSecretariatOrAdminOrAssessment()]  # create, update, partial_update
 
     def get_queryset(self):
         qs = AppraisalCriteriaEvidence.objects.select_related(
@@ -2257,7 +2257,7 @@ class CriteriaViewSet(viewsets.ViewSet):
 
     def get_permissions(self):
         if self.action in self.ADMIN_ACTIONS: return [IsAdmin()]
-        if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdmin()]
+        if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdminOrAssessment()]
         return [IsAuthenticated()]
 
     def list(self, request):              
@@ -2286,7 +2286,7 @@ class EvidenceViewSet(viewsets.ViewSet):
         if self.action in self.ADMIN_ACTIONS: 
             return [IsAdmin()]
         if self.action in self.WRITE_ACTIONS: 
-            return [IsSecretariatOrAdmin()]
+            return [IsSecretariatOrAdminOrAssessment()]
         return [IsAuthenticated()]
 
     def list(self, request):              
@@ -2376,7 +2376,7 @@ class DecisionTemplateViewSet(viewsets.ViewSet):
 
     def get_permissions(self):
         if self.action in self.ADMIN_ACTIONS: return [IsAdmin()]
-        if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdmin()]
+        if self.action in self.WRITE_ACTIONS: return [IsSecretariatOrAdminOrAssessment()]
         return [IsAuthenticated()]
 
     def _can_regenerate(self, request):
