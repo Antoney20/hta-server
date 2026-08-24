@@ -57,7 +57,7 @@ from django.utils import timezone
 from django.contrib.auth import get_user_model
 User = get_user_model()
 
-from rest_framework.generics import ListAPIView,  RetrieveAPIView
+from rest_framework.generics import ListAPIView,  RetrieveAPIView, get_object_or_404
 
 ALLOWED_EXTENSIONS = {'.pdf', '.png'}
 
@@ -1127,6 +1127,7 @@ class MemberListAPIView(generics.ListAPIView):
         return queryset.filter(user__isnull=False)
     
     
+
 class MemberAdminAPIView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Member.objects.select_related('user').all()
     permission_classes = [IsSecretariatOrAdmin]
@@ -1137,15 +1138,43 @@ class MemberAdminAPIView(generics.RetrieveUpdateDestroyAPIView):
             return MemberAdminSerializer
         return MemberListSerializer
 
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+
+        if instance.user.is_superuser or instance.user.is_staff:
+            raise PermissionDenied(
+                "Staff or superuser accounts cannot be modified."
+            )
+
+        return super().update(request, *args, **kwargs)
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
 
-        if  instance.user.is_superuser:
+        if instance.user.is_superuser or instance.user.is_staff:
             raise PermissionDenied(
-                "Staff or superuser accounts cannot be deleted."
+                "Staff or superuser accounts cannot be deactivated."
             )
 
-        return super().destroy(request, *args, **kwargs)
+        instance.user.is_active = False
+        instance.user.save(update_fields=["is_active"])
+
+        return Response(
+            {"detail": "Member deactivated."},
+            status=status.HTTP_200_OK,
+        )
+        
+        
+class MemberActivateAPIView(APIView):
+    permission_classes = [IsSecretariatOrAdmin]
+
+    def patch(self, request, pk):
+        member = get_object_or_404(Member.objects.select_related("user"), pk=pk)
+        if member.user.is_superuser or member.user.is_staff:
+            raise PermissionDenied("Staff or superuser accounts can't be changed here.")
+        member.user.is_active = True
+        member.user.save(update_fields=["is_active"])
+        return Response({"detail": "Account activated."}, status=status.HTTP_200_OK)
     
 class DashboardStatsView(APIView):
     permission_classes = [IsAuthenticated]

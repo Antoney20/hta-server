@@ -1,7 +1,7 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
-from .views import DashboardStatsView, InterventionProposalListView, InterventionProposalView, LoginView, LogoutView, MemberAdminAPIView, MemberListAPIView, PasswordResetConfirmView, PasswordResetRequestView,  ProposalSubmissionListView, RegisterView, check_multiple_submissions
+from .views import DashboardStatsView, InterventionProposalListView, InterventionProposalView, LoginView, LogoutView, MemberActivateAPIView, MemberAdminAPIView, MemberListAPIView, PasswordResetConfirmView, PasswordResetRequestView,  ProposalSubmissionListView, RegisterView, check_multiple_submissions
 from rest_framework_simplejwt.views import (
     TokenObtainPairView,
     TokenRefreshView,)
@@ -50,6 +50,7 @@ urlpatterns = [
     path('proposal-submissions/', ProposalSubmissionListView.as_view(), name='proposal-submission-list'),
     
     path('members/', MemberListAPIView.as_view(), name='member-list'),
+    path("members/<pk>/activate/", MemberActivateAPIView.as_view()),
     path("members/<pk>/", MemberAdminAPIView.as_view()),
     
     path("dashboard/", DashboardStatsView.as_view(), name="dash"),
