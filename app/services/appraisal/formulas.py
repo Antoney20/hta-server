@@ -14,10 +14,20 @@
 #                           raw (pre-compute) input, not its own computed slot, so
 #                           self-derived fields (coverage -> coverage%) are allowed
 #                           and are NOT treated as circular.
+
+#                           Field keys may begin with a digit (e.g.
+#                           5_year_projections); such bare names are masked to a
+#                           valid identifier for parsing, then un-masked on the
+#                           tree so the rest of the engine sees the real key.
 # * ref("Crit", "key"[, default])
 #                        -> value of `key` on the SAME target's row for another
 #                           criterion. Missing target / field falls back to
 #                           `default` (0).
+
+# No-data discipline
+# ------------------
+# An empty input or a non-finite result (NaN / ±Inf) is preserved as no-data
+# (None -> "—"), never coerced to 0. Rounding is only applied to finite values.
 
 # Arithmetic only, no eval, no I/O, whitelisted functions — stays on the
 # deterministic side of the model wall and is therefore auditable.
@@ -67,6 +77,64 @@
 #         return float(s)
 #     except ValueError:
 #         raise FormulaError(f'"{v}" is not a number')
+
+
+# # ── digit-led identifier support ───────────────────────────────────────────
+# _ALIAS_PREFIX = "_f_"
+
+
+# def _mask_numeric_idents(expr):
+#     """Rewrite bare identifiers that begin with a digit (e.g. 5_year_projections)
+#     into valid Python identifiers so ast.parse accepts them, mirroring the JS
+#     tokenizer. Numbers (incl. 1e-5) and string literals are left untouched.
+#     Returns (masked_expr, {alias: original})."""
+#     out, alias = [], {}
+#     i, n = 0, len(expr)
+#     while i < n:
+#         c = expr[i]
+#         if c in "\"'":                                     # string literal — copy verbatim
+#             j = i + 1
+#             while j < n and expr[j] != c:
+#                 j += 1
+#             out.append(expr[i:min(j + 1, n)]); i = j + 1; continue
+#         if c.isdigit() or (c == "." and i + 1 < n and expr[i + 1].isdigit()):
+#             j = i
+#             while j < n and (expr[j].isdigit() or expr[j] == "."):
+#                 j += 1
+#             # exponent notation: 1e-5, 2.3E+4, 6e9
+#             if j < n and expr[j] in "eE" and (
+#                 (j + 1 < n and expr[j + 1].isdigit())
+#                 or (j + 2 < n and expr[j + 1] in "+-" and expr[j + 2].isdigit())
+#             ):
+#                 j += 1
+#                 if j < n and expr[j] in "+-":
+#                     j += 1
+#                 while j < n and expr[j].isdigit():
+#                     j += 1
+#             if j < n and (expr[j].isalpha() or expr[j] == "_"):   # digit-led identifier
+#                 k = i
+#                 while k < n and (expr[k].isalnum() or expr[k] == "_"):
+#                     k += 1
+#                 name = expr[i:k]
+#                 a = _ALIAS_PREFIX + name
+#                 alias[a] = name
+#                 out.append(a); i = k; continue
+#             out.append(expr[i:j]); i = j; continue
+#         out.append(c); i += 1
+#     return "".join(out), alias
+
+
+# def _parse_formula(expr, mode="eval"):
+#     """ast.parse with digit-led field keys masked, then un-masked on the tree
+#     so the rest of the engine sees the real key names. Raises SyntaxError just
+#     like ast.parse, so existing except-guards still catch genuine errors."""
+#     masked, alias = _mask_numeric_idents(expr)
+#     tree = ast.parse(masked, mode=mode)
+#     if alias:
+#         for node in ast.walk(tree):
+#             if isinstance(node, ast.Name) and node.id in alias:
+#                 node.id = alias[node.id]
+#     return tree
 
 
 # def _eval(node, resolve, ref_func):
@@ -153,14 +221,14 @@
 
 # def field_refs(expr):
 #     try:
-#         return _name_ids(ast.parse(expr, mode="eval"))
+#         return _name_ids(_parse_formula(expr))
 #     except SyntaxError:
 #         return set()
 
 
 # def criterion_refs(expr):
 #     try:
-#         tree = ast.parse(expr, mode="eval")
+#         tree = _parse_formula(expr)
 #     except SyntaxError:
 #         return set()
 #     out = set()
@@ -177,7 +245,7 @@
 #     if not (expr or "").strip():
 #         return "empty formula"
 #     try:
-#         tree = ast.parse(expr, mode="eval")
+#         tree = _parse_formula(expr)
 #     except SyntaxError as e:
 #         return f"syntax error: {e.msg}"
 #     banned = (ast.Attribute, ast.Subscript, ast.Lambda, ast.Dict, ast.List,
@@ -194,7 +262,9 @@
 #     """
 #     Compute every formula field on one evidence row, in local dependency order.
 #     Returns (new_data, errors). Formula keys are always overwritten; a field
-#     that errors is set to None and reported in `errors`.
+#     that errors — including a non-finite (NaN / ±Inf) result — is set to None
+#     and reported in `errors`. None means "no data" ("—"), and is never coerced
+#     to 0.
 
 #     A formula referencing its own key resolves from `original` (the pre-compute
 #     row data), so self-derived fields are permitted and the self-edge is dropped
@@ -206,7 +276,7 @@
 #     deps, parsed = {}, {}
 #     for k, h in fheaders.items():
 #         try:
-#             tree = ast.parse(h["formula"], mode="eval")
+#             tree = _parse_formula(h["formula"])
 #             parsed[k] = tree
 #             deps[k] = (_name_ids(tree) & fkeys) - {k}       # formula→formula edges, minus self
 #         except SyntaxError as e:
@@ -240,17 +310,19 @@
 #             raise FormulaError(f'unknown field "{name}"')
 
 #         try:
-#             val = _eval(tree.body, resolve, ref_func)
-#             result[k] = round(float(val), rnd)
+#             val = float(_eval(tree.body, resolve, ref_func))
+#             if not math.isfinite(val):        # NaN / ±Inf → no-data ("—"), never 0
+#                 errors[k] = "not a number"; result[k] = None
+#             else:
+#                 result[k] = round(val, rnd)
 #         except FormulaError as e:
 #             errors[k] = str(e); result[k] = None
 #         except ZeroDivisionError:
 #             errors[k] = "division by zero"; result[k] = None
-#         except Exception as e: 
+#         except Exception as e:
 #             errors[k] = f"error: {e}"; result[k] = None
 
 #     return result, errors
-
 
 """
 formulas.py — deterministic formula engine for CriterionEvidence.
@@ -262,26 +334,29 @@ A criterion data-label (header) becomes a computed field by carrying a formula:
 
 References
 ----------
-* bare name            -> another field on the SAME evidence row
-                          (raw input OR another computed field on that row).
-                          A formula that references its OWN key reads the row's
-                          raw (pre-compute) input, not its own computed slot, so
-                          self-derived fields (coverage -> coverage%) are allowed
-                          and are NOT treated as circular.
+* bare name            -> another field on the SAME evidence row (raw input OR
+                          another computed field on that row). A formula that
+                          references its OWN key reads the row's raw (pre-compute)
+                          input, not its own computed slot, so self-derived fields
+                          (coverage -> coverage%) are allowed and NOT treated as
+                          circular.
 
-                          Field keys may begin with a digit (e.g.
-                          5_year_projections); such bare names are masked to a
-                          valid identifier for parsing, then un-masked on the
-                          tree so the rest of the engine sees the real key.
-* ref("Crit", "key"[, default])
-                       -> value of `key` on the SAME target's row for another
-                          criterion. Missing target / field falls back to
-                          `default` (0).
+                          Field keys may CONTAIN or BEGIN WITH a digit
+                          (year_1_total_cost_kes, 5_year_projections). Digit-LED
+                          bare names are masked to a valid identifier for parsing
+                          and un-masked on the tree; names that merely contain a
+                          digit are copied whole and never split.
+* ref("Crit","key"[,d]) -> value of `key` on the SAME target's row for another
+                          criterion. Missing target / field falls back to d (0).
 
-No-data discipline
-------------------
+No-data & null handling
+-----------------------
 An empty input or a non-finite result (NaN / ±Inf) is preserved as no-data
-(None -> "—"), never coerced to 0. Rounding is only applied to finite values.
+(None -> "—"), never coerced to 0. To opt INTO 0 (or a fallback) for a field
+that may be blank, wrap it:  nz(x)  ->  x if it has a value, else 0;
+nz(a, b) / coalesce(a, b) / ifnull(a, b)  ->  first arg that has a value, else 0.
+nz swallows ONLY missing data — a genuine bad-number or divide-by-zero still
+surfaces as "—".
 
 Arithmetic only, no eval, no I/O, whitelisted functions — stays on the
 deterministic side of the model wall and is therefore auditable.
@@ -292,6 +367,13 @@ import operator
 
 
 class FormulaError(Exception):
+    pass
+
+
+class EmptyValue(FormulaError):
+    """No-data sentinel. Subclass so existing `except FormulaError` still treats
+    an empty input as "—" by default, but nz()/coalesce()/ifnull() can catch
+    ONLY this and leave real errors (bad number, div-by-zero) to still dash."""
     pass
 
 
@@ -314,6 +396,9 @@ _FUNCS = {
     "exp": lambda x: math.exp(x), "sum": lambda *a: float(sum(a)),
     "iif": lambda c, a, b: a if c else b,
 }
+# special forms: evaluated lazily in _eval, NOT registered in _FUNCS, so a blank
+# operand is caught before it can throw. Reserved: not usable as field names.
+_SPECIAL = {"nz", "coalesce", "ifnull"}
 DEFAULT_ROUND = 4
 
 
@@ -323,10 +408,10 @@ def _num(v):
     if isinstance(v, (int, float)):
         return float(v)
     if v is None:
-        raise FormulaError("value is empty")
+        raise EmptyValue("value is empty")
     s = str(v).strip().replace(",", "")
     if s == "":
-        raise FormulaError("value is empty")
+        raise EmptyValue("value is empty")
     try:
         return float(s)
     except ValueError:
@@ -338,9 +423,10 @@ _ALIAS_PREFIX = "_f_"
 
 
 def _mask_numeric_idents(expr):
-    """Rewrite bare identifiers that begin with a digit (e.g. 5_year_projections)
+    """Rewrite bare identifiers that BEGIN with a digit (e.g. 5_year_projections)
     into valid Python identifiers so ast.parse accepts them, mirroring the JS
-    tokenizer. Numbers (incl. 1e-5) and string literals are left untouched.
+    tokenizer. Numbers (incl. 1e-5), string literals, and ordinary identifiers
+    that merely CONTAIN a digit (year_1_total_cost_kes) are left untouched.
     Returns (masked_expr, {alias: original})."""
     out, alias = [], {}
     i, n = 0, len(expr)
@@ -351,6 +437,11 @@ def _mask_numeric_idents(expr):
             while j < n and expr[j] != c:
                 j += 1
             out.append(expr[i:min(j + 1, n)]); i = j + 1; continue
+        if c.isalpha() or c == "_":                        # ordinary identifier — copy the WHOLE
+            j = i                                          # [A-Za-z0-9_]+ run so a mid-name digit
+            while j < n and (expr[j].isalnum() or expr[j] == "_"):   # (year_1_total_cost_kes) is
+                j += 1                                     # never split; only digit-LED names
+            out.append(expr[i:j]); i = j; continue         # (5_year_x) reach the branch below.
         if c.isdigit() or (c == "." and i + 1 < n and expr[i + 1].isdigit()):
             j = i
             while j < n and (expr[j].isdigit() or expr[j] == "."):
@@ -380,8 +471,7 @@ def _mask_numeric_idents(expr):
 
 def _parse_formula(expr, mode="eval"):
     """ast.parse with digit-led field keys masked, then un-masked on the tree
-    so the rest of the engine sees the real key names. Raises SyntaxError just
-    like ast.parse, so existing except-guards still catch genuine errors."""
+    so the rest of the engine sees the real key names."""
     masked, alias = _mask_numeric_idents(expr)
     tree = ast.parse(masked, mode=mode)
     if alias:
@@ -436,19 +526,35 @@ def _eval(node, resolve, ref_func):
     if isinstance(node, ast.Call):
         if not isinstance(node.func, ast.Name):
             raise FormulaError("unsupported call")
+        fname = node.func.id
+        # nz / coalesce / ifnull — special form: args evaluated LAZILY so an
+        # EMPTY operand is swallowed here (→ next arg, else 0) instead of dashing
+        # the whole field. Real errors (bad number, div-by-zero) still propagate.
+        # Must live here, not in _FUNCS: a plain function pre-evaluates its args
+        # and the empty would throw before it ran.
+        if fname in _SPECIAL:
+            if not node.args:
+                raise FormulaError("nz() needs a value")
+            for a in node.args:
+                try:
+                    return _eval(a, resolve, ref_func)
+                except EmptyValue:
+                    continue
+            return 0.0
         args = [_eval(a, resolve, ref_func) for a in node.args]
-        if node.func.id == "ref":
+        if fname == "ref":
             return ref_func(*args)
-        fn = _FUNCS.get(node.func.id)
+        fn = _FUNCS.get(fname)
         if not fn:
-            raise FormulaError(f'unknown function "{node.func.id}"')
+            raise FormulaError(f'unknown function "{fname}"')
         return fn(*args)
     raise FormulaError("unsupported expression")
 
 
 def _name_ids(tree):
     return {n.id for n in ast.walk(tree)
-            if isinstance(n, ast.Name) and n.id not in _FUNCS and n.id != "ref"}
+            if isinstance(n, ast.Name)
+            and n.id not in _FUNCS and n.id != "ref" and n.id not in _SPECIAL}
 
 
 def _toposort(deps):
@@ -517,8 +623,8 @@ def compute_row(headers, data, ref_func, default_round=DEFAULT_ROUND):
     Compute every formula field on one evidence row, in local dependency order.
     Returns (new_data, errors). Formula keys are always overwritten; a field
     that errors — including a non-finite (NaN / ±Inf) result — is set to None
-    and reported in `errors`. None means "no data" ("—"), and is never coerced
-    to 0.
+    and reported in `errors`. None means "no data" ("—"), never coerced to 0
+    unless the formula opts in with nz()/coalesce()/ifnull().
 
     A formula referencing its own key resolves from `original` (the pre-compute
     row data), so self-derived fields are permitted and the self-edge is dropped
@@ -558,10 +664,10 @@ def compute_row(headers, data, ref_func, default_round=DEFAULT_ROUND):
 
         def resolve(name, _r=result, _self=k, _orig=original):
             if name == _self:
-                return _num(_orig.get(name)) if name in _orig else 0.0
+                return _num(_orig.get(name))            # own key ← raw input; empty → EmptyValue → dash
             if name in _r:
-                return _num(_r[name])
-            raise FormulaError(f'unknown field "{name}"')
+                return _num(_r[name])                   # raw OR settled formula field; empty → EmptyValue
+            raise EmptyValue(f'no value for "{name}"')  # referenced field not on this row → empty
 
         try:
             val = float(_eval(tree.body, resolve, ref_func))
@@ -569,7 +675,7 @@ def compute_row(headers, data, ref_func, default_round=DEFAULT_ROUND):
                 errors[k] = "not a number"; result[k] = None
             else:
                 result[k] = round(val, rnd)
-        except FormulaError as e:
+        except FormulaError as e:             # includes EmptyValue when NOT caught by nz
             errors[k] = str(e); result[k] = None
         except ZeroDivisionError:
             errors[k] = "division by zero"; result[k] = None
