@@ -1138,6 +1138,19 @@ class PanelAppraisalScore(models.Model):
     def target(self):
         return self.intervention or self.national_proposal
     
+    def __str__(self):
+        target = self.intervention or self.national_proposal
+        target_name = str(target) if target else "No proposal"
+
+        reviewer_name = self.reviewer.first_name or self.reviewer.username
+
+        return (
+            f"{target_name} | "
+            f"{reviewer_name} | "
+            f"{self.criteria} | "
+            f"{self.service_key}"
+        )    
+    
 class PanelAppraisal(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     intervention = models.ForeignKey(
