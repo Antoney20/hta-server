@@ -1,8 +1,7 @@
 import logging
-from smtplib import SMTPException
 
 from django.conf import settings
-from django.core.mail import EmailMultiAlternatives
+from django.core.mail import EmailMultiAlternatives, get_connection
 from django.template import Context, Template
 from django.template.loader import render_to_string
 from django.utils import timezone
@@ -11,6 +10,9 @@ from django.utils.safestring import mark_safe
 from app.models import FeedbackEmailLog
 
 logger = logging.getLogger(__name__)
+
+# Fail fast instead of hanging the worker when SMTP is unreachable on the server.
+DEFAULT_EMAIL_TIMEOUT = 15
 
 
 def _build_context(intervention, category, status_update=None) -> dict:
@@ -32,13 +34,13 @@ def _build_context(intervention, category, status_update=None) -> dict:
         "feedback":        feedback,
         "category_name":   category.name,
         "subject":         category.subject,
-        "bptap":        getattr(settings, "ORG_NAME", "BPTAP"),
-        "bptap_email":       getattr(settings, "DEFAULT_FROM_EMAIL", "hbtap@uonbi.ac.ke" ),
+        "bptap":           getattr(settings, "ORG_NAME", "BPTAP"),
+        "bptap_email":     getattr(settings, "DEFAULT_FROM_EMAIL", "hbtap@uonbi.ac.ke"),
         "current_year":    timezone.now().year,
     }
 
 
-def send_feedback_email(intervention, category, status_update=None, sent_by=None) -> bool:
+def send_feedback_email(intervention, category, status_update=None, sent_by=None):
     """
     Render the category's stored body template, wrap it in the base
     layout, send to the proposal submitter, and log the attempt.
@@ -50,9 +52,9 @@ def send_feedback_email(intervention, category, status_update=None, sent_by=None
         sent_by:       User who triggered the send (optional)
 
     Returns:
-        True on success, False on failure.
+        The FeedbackEmailLog created for this attempt on success, None on failure.
+        (The log is truthy, so `if send_feedback_email(...)` still works.)
     """
-
     from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "hbtap@uonbi.ac.ke")
     recipient  = getattr(intervention, "email", None)
 
@@ -61,18 +63,18 @@ def send_feedback_email(intervention, category, status_update=None, sent_by=None
             "send_feedback_email: intervention %s has no email — skipping.",
             intervention.pk,
         )
-        return False
+        return None
 
     ctx = _build_context(intervention, category, status_update)
 
     try:
         rendered_subject = Template(category.subject).render(Context(ctx))
 
-        #  render the DB body template 
+        # render the DB body template
         rendered_body = Template(category.template).render(Context(ctx))
 
-        # inject body into the  base layout 
-        #   mark_safe so the base template renders it as HTML, not escaped text
+        # inject body into the base layout;
+        # mark_safe so the base template renders it as HTML, not escaped text
         layout_ctx = {**ctx, "body_content": mark_safe(rendered_body)}
         rendered_html = render_to_string("emails/feedback_base.html", layout_ctx)
 
@@ -81,7 +83,7 @@ def send_feedback_email(intervention, category, status_update=None, sent_by=None
             "send_feedback_email: render failed for category '%s': %s",
             category.name, render_exc,
         )
-        return False
+        return None
 
     log = FeedbackEmailLog.objects.create(
         intervention=intervention,
@@ -101,11 +103,16 @@ def send_feedback_email(intervention, category, status_update=None, sent_by=None
         )
         log.mark_sending()
 
+        connection = get_connection(
+            fail_silently=False,
+            timeout=getattr(settings, "EMAIL_TIMEOUT", None) or DEFAULT_EMAIL_TIMEOUT,
+        )
         email = EmailMultiAlternatives(
             subject=rendered_subject,
             body="",
             from_email=from_email,
             to=[recipient],
+            connection=connection,
         )
         email.attach_alternative(rendered_html, "text/html")
         email.send(fail_silently=False)
@@ -115,12 +122,12 @@ def send_feedback_email(intervention, category, status_update=None, sent_by=None
             "Feedback email [%s] sent successfully to %s",
             category.name, recipient,
         )
-        return True
+        return log
 
-    except (SMTPException, Exception) as exc:
+    except Exception as exc:  # SMTPException, socket.timeout, OSError, ...
         log.mark_failed(exc)
         logger.error(
             "Failed to send feedback email [%s] to %s — %s",
             category.name, recipient, exc,
         )
-        return False
+        return None

@@ -1354,12 +1354,11 @@ class FeedbackCategoryViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
  
 
 
-
 class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet):
     queryset = FeedbackEmailLog.objects.none()
     permission_classes = [permissions.IsAuthenticated, IsAdmin]
     serializer_class = FeedbackEmailLogSerializer
- 
+
     def _qs(self):
         return (
             FeedbackEmailLog.objects
@@ -1370,7 +1369,14 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
             )
             .order_by("-created_at")
         )
- 
+
+    def _send_response(self, result):
+        """Shared response for send / resend: the service decides, the view only formats."""
+        if not result.success:
+            return _err(result.error or "Failed to send email.", 400)
+        log = self._qs().get(pk=result.log.pk)
+        return _ok(FeedbackEmailLogSerializer(log).data, "Email sent successfully.")
+
     def list(self, request, *args, **kwargs):
         qs = self._qs()
         # optional filters
@@ -1385,71 +1391,47 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         if date_to := request.query_params.get("date_to"):
             qs = qs.filter(created_at__date__lte=date_to)
         return _ok(FeedbackEmailLogSerializer(qs, many=True).data)
- 
+
     def retrieve(self, request, *args, **kwargs):
         try:
             instance = self._qs().get(pk=kwargs["pk"])
         except FeedbackEmailLog.DoesNotExist:
             return _err("Email log not found.", 404)
         return _ok(FeedbackEmailLogSerializer(instance).data)
- 
+
     @action(detail=False, methods=["get"], url_path="by-intervention")
     def by_intervention(self, request):
         iid = request.query_params.get("intervention")
         if not iid:
             return _err("'intervention' query param is required.")
         return _ok(FeedbackEmailLogSerializer(self._qs().filter(intervention_id=iid), many=True).data)
- 
+
     @action(detail=False, methods=["get"], url_path="by-category")
     def by_category(self, request):
         cid = request.query_params.get("category")
         if not cid:
             return _err("'category' query param is required.")
         return _ok(FeedbackEmailLogSerializer(self._qs().filter(category_id=cid), many=True).data)
- 
 
     @action(detail=False, methods=["post"], url_path="send")
     def send_email(self, request):
-        from users.models import InterventionProposal
-        
- 
         iid = request.data.get("intervention")
         cid = request.data.get("category")
         if not iid: return _err("'intervention' is required.")
         if not cid: return _err("'category' is required.")
- 
-        intervention, err = _get_or_404(InterventionProposal, pk=iid)
-        if err: return err
-        category, err = _get_or_404(FeedbackCategory, pk=cid, is_active=True)
-        if err: return _err("Feedback category not found or inactive.", 404)
- 
-        su = None
-        if su_id := request.data.get("status_update"):
-            su, err = _get_or_404(InterventionStatusUpdate, pk=su_id, intervention=intervention)
-            if err: return _err("Status update not found for this intervention.", 404)
- 
-        ok = send_feedback_email(
-            intervention=intervention, category=category,
-            status_update=su, sent_by=request.user,
-        )
-        if not ok:
-            return _err("Failed to send email. Check logs for details.", 500)
- 
-        FeedbackService.invalidate()
-        log = self._qs().filter(intervention=intervention, category=category).first()
-        return _ok(FeedbackEmailLogSerializer(log).data if log else None, "Email sent successfully.")
+
+        return self._send_response(FeedbackService.send(
+            intervention_id=iid,
+            category_id=cid,
+            sent_by=request.user,
+            status_update_id=request.data.get("status_update"),
+        ))
 
     @action(detail=True, methods=["post"], url_path="resend")
     def resend_email(self, request, pk=None):
         """Re-send an existing log entry. Creates a fresh log — does not mutate the original."""
-        ok, message = FeedbackService.resend(log_id=pk, sent_by=request.user)
-        if not ok:
-            return _err(message, 400)
-        log = self._qs().filter(
-            intervention_id=FeedbackEmailLog.objects.get(pk=pk).intervention_id
-        ).first()
-        return _ok(FeedbackEmailLogSerializer(log).data if log else None, message)
- 
+        return self._send_response(FeedbackService.resend(log_id=pk, sent_by=request.user))
+
     @action(detail=True, methods=["delete"], url_path="delete")
     def delete_log(self, request, pk=None):
         instance, err = _get_or_404(FeedbackEmailLog, pk=pk)
@@ -1457,7 +1439,7 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         instance.delete()
         FeedbackService.invalidate()
         return _ok(None, "Email log deleted.")
- 
+
     @action(detail=False, methods=["post"], url_path="bulk-send")
     def bulk_send(self, request):
         cid  = request.data.get("category")
@@ -1465,7 +1447,7 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         if not cid: return _err("'category' is required.")
         if not iids or not isinstance(iids, list): return _err("'intervention_ids' must be a non-empty list.")
         if len(iids) > 100: return _err("Maximum 100 interventions per bulk send.")
- 
+
         result = FeedbackService.bulk_send(
             intervention_ids=iids, category_id=cid, sent_by=request.user,
         )
@@ -1489,9 +1471,6 @@ class FeedbackEmailLogViewSet(RetrieveModelMixin, ListModelMixin, GenericViewSet
         date_to   = request.query_params.get("date_to")
         statuses  = FeedbackService.get_all_statuses(date_from=date_from, date_to=date_to)
         return _ok([asdict(s) for s in statuses])
-
-    
-    
     
 
 class CriteriaAppraisalToolViewSet(viewsets.ModelViewSet):

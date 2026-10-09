@@ -7,7 +7,6 @@ from typing import Optional
 from django.core.cache import cache
 
 from app.core.emails.feedback import send_feedback_email
-from app.models import InterventionSystemCategory
 
 logger = logging.getLogger(__name__)
 
@@ -37,10 +36,11 @@ class InterventionFeedbackStatus:
 
 @dataclass
 class SendResult:
-    """Result for a single email send attempt."""
+    """Result for a single email send attempt. `log` is the new FeedbackEmailLog on success."""
     intervention_id: str
     success:         bool
     error:           Optional[str] = None
+    log:             Optional[object] = None
 
 
 @dataclass
@@ -212,7 +212,7 @@ class FeedbackService:
             (s for s in cls._cached_statuses() if s.intervention_id == intervention_id),
             None,
         )
-        
+
     @classmethod
     def _send_one(
         cls,
@@ -229,14 +229,14 @@ class FeedbackService:
         if not getattr(iv, "email", None):
             return SendResult(iid, success=False, error="No email address")
         try:
-            ok = send_feedback_email(
+            log = send_feedback_email(
                 intervention=iv,
                 category=category,
                 status_update=latest_su.get(iid),
                 sent_by=sent_by,
             )
-            if ok:
-                return SendResult(iid, success=True)
+            if log:
+                return SendResult(iid, success=True, log=log)
             return SendResult(iid, success=False, error="Send failed — see email log")
         except Exception as exc:
             logger.exception("Unexpected error sending feedback email for %s", iid)
@@ -248,28 +248,41 @@ class FeedbackService:
         intervention_id: str,
         category_id: str,
         sent_by=None,
+        status_update_id: str | None = None,
     ) -> SendResult:
         from users.models import InterventionProposal
         from app.models import FeedbackCategory, InterventionStatusUpdate
 
+        intervention_id = str(intervention_id)
+
         try:
             category = FeedbackCategory.objects.get(pk=category_id, is_active=True)
-        except FeedbackCategory.DoesNotExist:
-            return SendResult(intervention_id, success=False, error="Category not found or inactive")
+        except (FeedbackCategory.DoesNotExist, ValueError):
+            return SendResult(intervention_id, success=False, error="Feedback category not found or inactive")
 
-        proposals = {
-            str(iv.id): iv
-            for iv in InterventionProposal.objects.filter(pk=intervention_id)
-        }
+        try:
+            proposals = {
+                str(iv.id): iv
+                for iv in InterventionProposal.objects.filter(pk=intervention_id)
+            }
+        except ValueError:
+            proposals = {}
+        if not proposals:
+            return SendResult(intervention_id, success=False, error="Intervention not found")
 
-        latest_su: dict[str, object] = {}
-        for su in (
+        su_qs = (
             InterventionStatusUpdate.objects
             .filter(intervention_id=intervention_id)
             .select_related("decision")
-            .order_by("-created_at")[:1]
-        ):
-            latest_su[str(su.intervention_id)] = su
+        )
+        if status_update_id:
+            su = su_qs.filter(pk=status_update_id).first()
+            if not su:
+                return SendResult(intervention_id, success=False, error="Status update not found for this intervention")
+        else:
+            su = su_qs.order_by("-created_at").first()
+
+        latest_su = {intervention_id: su} if su else {}
 
         result = cls._send_one(intervention_id, proposals, latest_su, category, sent_by)
         cls.invalidate()
@@ -329,14 +342,14 @@ class FeedbackService:
                 .get(pk=log_id)
             )
         except FeedbackEmailLog.DoesNotExist:
-            return SendResult(log_id, success=False, error="Email log not found")
+            return SendResult(str(log_id), success=False, error="Email log not found")
 
         if not log.category.is_active:
             return SendResult(str(log.intervention_id), success=False, error="Category is inactive — cannot resend")
 
         iid = str(log.intervention_id)
-        proposals  = {iid: log.intervention}
-        latest_su  = {}  # resend does not re-attach a status update
+        proposals = {iid: log.intervention}
+        latest_su = {}  # resend does not re-attach a status update
 
         result = cls._send_one(iid, proposals, latest_su, log.category, sent_by)
         cls.invalidate()
